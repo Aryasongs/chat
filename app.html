@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-visual">
 <title>marsX – Private End-to-End Encrypted Messenger | Free Chat, Voice &amp; Video Calls</title>
 <meta name="description" content="marsX is a private messenger with end-to-end encryption. Send secure messages, photos, voice notes, GIFs and location, and make free voice &amp; video calls. No ads, no tracking. Sign up free.">
 <meta name="keywords" content="marsX, private messenger, end-to-end encrypted chat, secure messaging app, encrypted video call, free voice call, secure chat app, privacy messenger, E2EE">
@@ -394,7 +394,7 @@ html{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100
 /* ===== keyboard fix: lock app to the visual viewport ===== */
 @media (max-width:960px){
   html,body{position:fixed;inset:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
-  .stage{position:fixed;left:0;right:0;top:0;transform:translate3d(0,var(--vvt,0px),0);height:var(--vvh,100dvh);min-height:0;overflow:hidden;transition:none!important}
+  .stage{position:fixed;left:0;right:0;top:0;transform:translate3d(var(--vvl,0px),var(--vvt,0px),0);height:var(--vvh,100dvh);min-height:0;overflow:hidden;transition:none!important}
   .phone{height:100%}
   .chead,.composer{transition:none!important}
   body.kb .composer{padding-bottom:8px}
@@ -407,6 +407,12 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulati
   input,textarea,select,.pill input{font-size:16px!important}
   #otpCode{font-size:22px!important}
   .pill input{font-size:17px!important}
+}
+@media (max-width:960px){
+  html,body,.stage,.phone{overflow:hidden!important;max-width:100vw;overscroll-behavior:none}
+  .stage{left:0!important;right:0!important;width:100%!important}
+  .pill input{transform:translateZ(0);-webkit-user-select:text;user-select:text}
+  *{-webkit-text-size-adjust:100%}
 }
 /* ===== mobile stability fixes ===== */
 html{overflow-x:hidden;max-width:100%}
@@ -667,13 +673,14 @@ body.kb .from{display:none}
     maxH=Math.max(maxH,window.innerHeight);
     const h=Math.round(vv.height); let t=Math.round(vv.offsetTop); if(t<0) t=0;
     const kb=(maxH-vv.height)>120;
-    const hCh=Math.abs(h-lastH)>1, tCh=Math.abs(t-lastT)>1;
+    const hCh=Math.abs(h-lastH)>1, tCh=Math.abs(t-lastT)>1||Math.abs((vv.offsetLeft||0)-(window.__l||0))>1; window.__l=vv.offsetLeft||0;
     if(!hCh&&!tCh&&kb===lastKb) return;
     const m=document.getElementById('msgs');
     // measure BEFORE the resize so we know if the user was reading the bottom
     const wasNear=!!m&&(m.scrollHeight-m.scrollTop-m.clientHeight<220);
     if(hCh) root.style.setProperty('--vvh',h+'px');
     if(tCh) root.style.setProperty('--vvt',t+'px');
+    root.style.setProperty('--vvl',Math.round(vv.offsetLeft||0)+'px');
     if(kb!==lastKb) document.body.classList.toggle('kb',kb);
     lastH=h; lastT=t; lastKb=kb;
     if(hCh&&m&&wasNear) m.scrollTop=m.scrollHeight;
@@ -685,6 +692,9 @@ body.kb .from{display:none}
   vv.addEventListener('resize',burst); vv.addEventListener('scroll',apply);
   window.addEventListener('orientationchange',()=>setTimeout(()=>{ maxH=window.innerHeight; lastH=-1; burst(); },350));
   window.addEventListener('pageshow',burst);
+  ['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+  document.addEventListener('touchmove',e=>{ if(e.touches.length>1||(e.scale&&e.scale!==1)) e.preventDefault(); },{passive:false});
+  let lt=0; document.addEventListener('touchend',e=>{ const n=Date.now(); if(n-lt<350&&!/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault(); lt=n; },{passive:false});
   // never touch the viewport meta (that caused the zoom); just keep the page pinned at 0,0
   function pin(){ if(window.scrollX||window.scrollY) window.scrollTo(0,0); if(document.scrollingElement&&document.scrollingElement.scrollTop) document.scrollingElement.scrollTop=0; }
   window.addEventListener('scroll',pin,{passive:true});
@@ -692,7 +702,11 @@ body.kb .from{display:none}
   vv.addEventListener('scroll',pin);
   document.addEventListener('focusin',()=>{ pin(); [0,60,150,300,500].forEach(t=>setTimeout(pin,t)); });
   document.addEventListener('focusout',()=>setTimeout(pin,120));
-  document.addEventListener('focusin',e=>{ if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) burst(); });
+  // iPhone home-screen app: iOS pans the visual viewport AFTER the keyboard opens and fires events late.
+  // So while any field is focused, sync EVERY frame (same-frame follow = no visible shift).
+  let live=0;
+  function liveLoop(){ apply(); pin(); const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)) live=requestAnimationFrame(liveLoop); else { live=0; burst(); } }
+  document.addEventListener('focusin',e=>{ if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)&&!live) live=requestAnimationFrame(liveLoop); });
   document.addEventListener('focusout',()=>setTimeout(burst,50));
   // while keyboard is up, dragging the header/composer must not pan the page (iOS)
   document.addEventListener('touchmove',e=>{ if(document.body.classList.contains('kb')&&e.target.closest&&e.target.closest('.chead,.composer,.nav,.panel-top')) e.preventDefault(); },{passive:false});
