@@ -1183,7 +1183,11 @@ function pushNotify(uid,payload){
     if(['react','vote','unsend','calllog','sys'].includes(t)) return;
     if(t==='call'&&payload.k!=='offer') return;
     const to=isGroup(uid)?othersOf(uid):[uid];
-    if(to.length) pushCall('/notify',{to}).catch(()=>{});
+    if(!to.length) return;
+    const kind=t==='call'?(payload.v?'videocall':'call'):t;
+    const body={to,name:String((myProf&&myProf.name)||'Someone'),kind};
+    if(isGroup(uid)){ body.group=String((contacts[uid]&&contacts[uid].name)||'Group'); body.chat=uid; }
+    pushCall('/notify',body).catch(()=>{});
   }catch(_){}
 }
 /* ---------------- preferences, groups, receipts, polls ---------------- */
