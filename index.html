@@ -10,6 +10,8 @@
 <meta property="og:site_name" content="marsX">
 <meta name="description" content="marsX – private, end-to-end encrypted messaging.">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1154,33 +1156,25 @@ async function sendPayload(uid, payload, mediaDataUrl){
   pushNotify(uid,payload);
 }
 /* ---------------- web push (notifications when the app is closed) ---------------- */
-const PUSH_URL='https://marsx-push.sgursharn076.workers.dev';          // your push-worker URL (see push-worker.js)
+const PUSH_URL='https://marsx-push.sgursharn076.workers.dev';
 const PUSH_PUBLIC_KEY='BKPW1IMfcqHEu3_p54yBip_jo6VOfRRfERH_lNFkujtRtzj0kUeFerXXdSx3XWm-hUFoG73k6_NeIy0khqTEYPA';
 const b64uBytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=')),c=>c.charCodeAt(0));
 async function pushCall(path,body){ const t=await auth.currentUser.getIdToken(); return fetch(PUSH_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); }
-const PUSH_DEBUG=true;   // shows push status toasts; set to false once it works
-const pdbg=m=>{ console.log('[push]',m); if(!PUSH_DEBUG) return; try{
-  let b=document.getElementById('pdbg'); if(!b){ b=document.createElement('div'); b.id='pdbg'; b.style.cssText='position:fixed;left:6px;right:6px;bottom:6px;z-index:2147483647;background:rgba(0,0,0,.82);color:#9f9;font:11px/1.35 monospace;padding:6px 8px;border-radius:8px;max-height:30vh;overflow:auto;white-space:pre-wrap'; b.onclick=()=>b.remove(); document.body.append(b); }
-  b.append(document.createTextNode(new Date().toLocaleTimeString()+' '+m+'\n')); b.scrollTop=b.scrollHeight; }catch(_){} };
-pdbg('build push-v3');
 async function setupPush(){
   try{
-    if(!PUSH_URL){ pdbg('PUSH_URL empty'); return; }
-    if(!('serviceWorker' in navigator)){ pdbg('no service worker support'); return; }
-    if(!('PushManager' in window)){ pdbg('no push support (iPhone: use Add to Home Screen)'); return; }
-    if(!('Notification' in window)||!me||!dev){ pdbg('no Notification API'); return; }
-    const reg=await navigator.serviceWorker.register('sw.js'); pdbg('sw registered, permission='+Notification.permission);
+    if(!PUSH_URL||!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)||!me||!dev) return;
+    await navigator.serviceWorker.register('sw.js');
     if(Notification.permission==='default'){
       // browsers (esp. iPhone) only allow the prompt after a tap
       const ask=async()=>{ document.removeEventListener('click',ask,true); try{ if(await Notification.requestPermission()==='granted') setupPush(); }catch(_){} };
       document.addEventListener('click',ask,true); return;
     }
-    if(Notification.permission!=='granted'){ pdbg('notifications blocked in browser settings'); return; }
+    if(Notification.permission!=='granted') return;
     const rdy=await navigator.serviceWorker.ready;
     let sub=await rdy.pushManager.getSubscription();
     if(!sub) sub=await rdy.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uBytes(PUSH_PUBLIC_KEY)});
-    const r=await pushCall('/subscribe',{sub:sub.toJSON(),dev:dev.id}); pdbg('subscribe '+r.status+(r.ok?' OK':' FAILED '+await r.text()));
-  }catch(e){ console.warn('push setup',e); pdbg('error: '+(e&&e.message||e)); }
+    await pushCall('/subscribe',{sub:sub.toJSON(),dev:dev.id});
+  }catch(e){ console.warn('push setup',e); }
 }
 function pushNotify(uid,payload){
   try{
@@ -1189,7 +1183,7 @@ function pushNotify(uid,payload){
     if(['react','vote','unsend','calllog','sys'].includes(t)) return;
     if(t==='call'&&payload.k!=='offer') return;
     const to=isGroup(uid)?othersOf(uid):[uid];
-    if(to.length) pushCall('/notify',{to}).then(async r=>pdbg('notify '+r.status+' '+(await r.text()).slice(0,80))).catch(e=>pdbg('notify error: '+(e&&e.message||e)));
+    if(to.length) pushCall('/notify',{to}).catch(()=>{});
   }catch(_){}
 }
 /* ---------------- preferences, groups, receipts, polls ---------------- */
