@@ -1159,7 +1159,10 @@ const PUSH_PUBLIC_KEY='BKPW1IMfcqHEu3_p54yBip_jo6VOfRRfERH_lNFkujtRtzj0kUeFerXXd
 const b64uBytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=')),c=>c.charCodeAt(0));
 async function pushCall(path,body){ const t=await auth.currentUser.getIdToken(); return fetch(PUSH_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); }
 const PUSH_DEBUG=true;   // shows push status toasts; set to false once it works
-const pdbg=m=>{ if(PUSH_DEBUG){ try{ toast('Push: '+m); }catch(_){} } console.log('[push]',m); };
+const pdbg=m=>{ console.log('[push]',m); if(!PUSH_DEBUG) return; try{
+  let b=document.getElementById('pdbg'); if(!b){ b=document.createElement('div'); b.id='pdbg'; b.style.cssText='position:fixed;left:6px;right:6px;bottom:6px;z-index:2147483647;background:rgba(0,0,0,.82);color:#9f9;font:11px/1.35 monospace;padding:6px 8px;border-radius:8px;max-height:30vh;overflow:auto;white-space:pre-wrap'; b.onclick=()=>b.remove(); document.body.append(b); }
+  b.append(document.createTextNode(new Date().toLocaleTimeString()+' '+m+'\n')); b.scrollTop=b.scrollHeight; }catch(_){} };
+pdbg('build push-v3');
 async function setupPush(){
   try{
     if(!PUSH_URL){ pdbg('PUSH_URL empty'); return; }
