@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>marsX – Private End-to-End Encrypted Messenger | Free Chat, Voice &amp; Video Calls</title>
 <meta name="description" content="marsX is a private messenger with end-to-end encryption. Send secure messages, photos, voice notes, GIFs and location, and make free voice &amp; video calls. No ads, no tracking. Sign up free.">
 <meta name="keywords" content="marsX, private messenger, end-to-end encrypted chat, secure messaging app, encrypted video call, free voice call, secure chat app, privacy messenger, E2EE">
@@ -177,7 +177,9 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .pill .em{color:var(--blue);width:36px;height:36px;display:grid;place-items:center}
 .pill .em svg{width:32px;height:32px;stroke-width:1.5}
 .sendb{width:46px;height:46px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;flex:none}
-.sendb svg{width:22px;height:22px}
+.sendb{-webkit-appearance:none;appearance:none;border:0;outline:none;-webkit-tap-highlight-color:transparent}
+.sendb:focus,.sendb:focus-visible,.sendb:active{outline:none;box-shadow:none;border:0}
+.sendb svg{width:22px;height:22px;pointer-events:none}
 .menu{position:absolute;left:32px;bottom:122px;background:var(--card);border-radius:22px;box-shadow:0 14px 40px rgba(40,60,120,.18);padding:8px;z-index:5;min-width:190px}
 .menu button{display:flex;gap:12px;align-items:center;width:100%;padding:12px 14px;border-radius:14px;color:var(--navy);font-weight:500}
 .menu button:hover{background:var(--soft)}
@@ -392,10 +394,22 @@ html{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100
 /* ===== keyboard fix: lock app to the visual viewport ===== */
 @media (max-width:960px){
   html,body{position:fixed;inset:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none}
-  .stage{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh);min-height:0;overflow:hidden}
+  .stage{position:fixed;left:0;right:0;top:0;transform:translate3d(0,var(--vvt,0px),0);height:var(--vvh,100dvh);min-height:0;overflow:hidden;transition:none!important}
   .phone{height:100%}
+  .chead,.composer{transition:none!important}
   body.kb .composer{padding-bottom:8px}
   body.kb .chead{padding-top:max(14px,env(safe-area-inset-top))}
+}
+
+/* ===== mobile stability fixes ===== */
+html{-webkit-tap-highlight-color:transparent}
+.msgs,.ci,#listBody,.sheet,.mo,.modal{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+@media (max-width:960px){
+  body{overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+  input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
+  .msgs .bub{-webkit-user-select:text;user-select:text;-webkit-touch-callout:none}
+  .stage{transition:none!important}
+  .phone{transform:none!important}
 }
 /* ===== message interactions ===== */
 .m{position:relative}
@@ -631,21 +645,39 @@ body.kb .from{display:none}
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
-/* keyboard fix: pin the app to the *visual* viewport so header + composer stay visible */
+/* keyboard fix: pin the app to the *visual* viewport (same-frame, no jitter on open/close) */
 (function(){
   const vv=window.visualViewport, root=document.documentElement; let maxH=window.innerHeight;
   if(!vv) return;
-  function upd(){
+  let lastH=-1, lastT=-1, lastKb=null, lastW=window.innerWidth, settle=0;
+  function apply(){
+    if(window.innerWidth!==lastW){ lastW=window.innerWidth; maxH=window.innerHeight; }
     maxH=Math.max(maxH,window.innerHeight);
-    const m=document.getElementById('msgs'); const near=m&&(m.scrollHeight-m.scrollTop-m.clientHeight<220);
-    root.style.setProperty('--vvh',Math.round(vv.height)+'px');
-    root.style.setProperty('--vvt',Math.round(vv.offsetTop)+'px');
-    document.body.classList.toggle('kb',(maxH-vv.height)>120);
-    if(window.scrollX||window.scrollY) window.scrollTo(0,0);
-    if(near&&m) requestAnimationFrame(()=>{ m.scrollTop=m.scrollHeight; });
+    const h=Math.round(vv.height); let t=Math.round(vv.offsetTop); if(t<0) t=0;
+    const kb=(maxH-vv.height)>120;
+    const hCh=Math.abs(h-lastH)>1, tCh=Math.abs(t-lastT)>1;
+    if(!hCh&&!tCh&&kb===lastKb) return;
+    const m=document.getElementById('msgs');
+    // measure BEFORE the resize so we know if the user was reading the bottom
+    const wasNear=!!m&&(m.scrollHeight-m.scrollTop-m.clientHeight<220);
+    if(hCh) root.style.setProperty('--vvh',h+'px');
+    if(tCh) root.style.setProperty('--vvt',t+'px');
+    if(kb!==lastKb) document.body.classList.toggle('kb',kb);
+    lastH=h; lastT=t; lastKb=kb;
+    if(hCh&&m&&wasNear) m.scrollTop=m.scrollHeight;
   }
-  vv.addEventListener('resize',upd); vv.addEventListener('scroll',upd); window.addEventListener('orientationchange',()=>setTimeout(()=>{ maxH=window.innerHeight; upd(); },300));
-  upd();
+  function burst(){            // keyboard animation: keep syncing every frame for ~450ms
+    apply(); cancelAnimationFrame(settle); const t0=performance.now();
+    (function loop(){ apply(); if(performance.now()-t0<450) settle=requestAnimationFrame(loop); })();
+  }
+  vv.addEventListener('resize',burst); vv.addEventListener('scroll',apply);
+  window.addEventListener('orientationchange',()=>setTimeout(()=>{ maxH=window.innerHeight; lastH=-1; burst(); },350));
+  window.addEventListener('pageshow',burst);
+  document.addEventListener('focusin',e=>{ if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) burst(); });
+  document.addEventListener('focusout',()=>setTimeout(burst,50));
+  // while keyboard is up, dragging the header/composer must not pan the page (iOS)
+  document.addEventListener('touchmove',e=>{ if(document.body.classList.contains('kb')&&e.target.closest&&e.target.closest('.chead,.composer,.nav,.panel-top')) e.preventDefault(); },{passive:false});
+  apply();
 })();
 /* =====================================================================
    CONFIG  (Firebase config copied from the Kashish AI project)
@@ -2101,6 +2133,15 @@ function renderChat(){
   const emBtn = h('button',{class:'em','aria-label':'Emoji'},svg('smile'));
   const sendBtn = h('button',{class:'sendb hidden','aria-label':'Send'},svg('send'));
   pill.append(plus,input,sendBtn,emBtn);
+  const setSend=on=>{
+    const shown=!sendBtn.classList.contains('hidden'); if(shown===on) return;
+    sendBtn.classList.toggle('hidden',!on);
+    if(!on){ try{ sendBtn.blur(); }catch(_){}
+      // WebKit/Chrome can leave a stale painted circle/border where a removed button was -> force a repaint of the pill
+      pill.style.willChange='opacity';
+      requestAnimationFrame(()=>{ pill.style.opacity='.999'; requestAnimationFrame(()=>{ pill.style.opacity=''; pill.style.willChange=''; }); });
+    }
+  };
   const comp = h('div',{class:'composer'},pill);
   replyTo=null; rbarEl=h('div',{class:'rbar hidden'}); comp.prepend(rbarEl);
   const typing = h('div',{class:'typing'});
@@ -2137,12 +2178,12 @@ function renderChat(){
   paintReceipt(); markRead(uid);
   const myTyping=R(`typing/${cid}/${me.uid}`); myTyping.onDisconnect().remove();
   input.addEventListener('input',()=>{
-    const has=input.value.trim().length>0; sendBtn.classList.toggle('hidden',!has);
+    const has=input.value.trim().length>0; setSend(has);
     if(PREF.get('ty') && Date.now()-lastTypingSent>2000){ lastTypingSent=Date.now(); myTyping.set(true); }
     clearTimeout(typingTimer); typingTimer=setTimeout(()=>{ myTyping.remove(); lastTypingSent=0; },3000);
   });
   async function doSend(fx){
-    const v=input.value; if(!v.trim()) return; input.value=''; sendBtn.classList.add('hidden'); myTyping.remove(); lastTypingSent=0;
+    const v=input.value; if(!v.trim()) return; input.value=''; setSend(false); myTyping.remove(); lastTypingSent=0;
     try{ await sendText(uid,v,fx); }catch(e){ toast(/permission/i.test(String(e&&e.message||e)) ? 'Message couldn’t be delivered.' : 'Send failed: '+(e.message||e)); input.value=v; }
   }
   input.addEventListener('focus',()=>setTimeout(()=>{ msgs.scrollTop=msgs.scrollHeight; },320));
@@ -2557,8 +2598,13 @@ function confirmDeleteContact(uid){
    or raw keys; only the new device's private key can open them.
    ===================================================================== */
 let histMap={}, hsAsked=new Set(), hsTimer=null, hrT=null, hsBusy=false;
-const hsFlag=(k,id)=>{ try{ return localStorage.getItem('hs'+k+':'+me.uid+':'+id)==='1'; }catch(_){ return false; } };
-const hsSet=(k,id)=>{ try{ localStorage.setItem('hs'+k+':'+me.uid+':'+id,'1'); }catch(_){} };
+const hsMem={};   // fallback when localStorage is blocked (private mode / in-app browsers)
+const hsFlag=(k,id)=>{ const key='hs'+k+':'+me.uid+':'+id; if(hsMem[key]) return true; try{ return localStorage.getItem(key)==='1'; }catch(_){ return false; } };
+const hsSet=(k,id)=>{ const key='hs'+k+':'+me.uid+':'+id; hsMem[key]=1; try{ localStorage.setItem(key,'1'); }catch(_){} };
+// "Later" / dismissed -> don't ask again for 3 days (survives reloads)
+const HS_SNOOZE=3*24*3600*1000;
+const hsSnoozed=id=>{ const key='hslater:'+me.uid+':'+id; let t=hsMem[key]||0; try{ t=Math.max(t,+localStorage.getItem(key)||0); }catch(_){} return Date.now()-t<HS_SNOOZE; };
+const hsSnooze=id=>{ const key='hslater:'+me.uid+':'+id, t=Date.now(); hsMem[key]=t; try{ localStorage.setItem(key,String(t)); }catch(_){} };
 async function histUnwrap(cid,key){
   const w=(histMap[cid]||{})[key]; if(!w||!dev) return null;
   try{
@@ -2612,12 +2658,12 @@ async function syncHistory(){
   } finally { hsBusy=false; }
 }
 async function checkNewDevices(){
-  if(!me||!dev||document.querySelector('#modalRoot .modal')) return;
+  if(!me||!dev||document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call)) return;
   let v; try{ v=(await R('devices/'+me.uid).once('value')).val()||{}; }catch(_){ return; }
   for(const [id,d] of Object.entries(v)){
-    if(id===dev.id||hsFlag('ok',id)||hsFlag('no',id)||hsAsked.has(id)) continue;
+    if(id===dev.id||hsFlag('ok',id)||hsFlag('no',id)||hsSnoozed(id)||hsAsked.has(id)) continue;
     if(!hsNeeds(id)) continue;
-    hsAsked.add(id);
+    hsAsked.add(id); hsSnooze(id);   // snooze immediately: even if dismissed by tapping outside, it won't come back
     modal(h('div',{class:'sheet'},h('h2',{},'Share chat history?'),
       h('p',{},'“'+(d.label||'A device')+'” is signed in to your account. Send it your recent chats so they appear there too? Messages stay end-to-end encrypted — only that device can open them.'),
       h('p',{style:'color:var(--danger)'},'Only allow this if it is your own phone or computer.'),
@@ -2629,7 +2675,7 @@ async function checkNewDevices(){
 }
 function scheduleDevCheck(){
   clearTimeout(hsTimer);
-  hsTimer=setTimeout(()=>{ syncHistory(); checkNewDevices(); setTimeout(()=>{ syncHistory(); checkNewDevices(); },7000); },4000);
+  hsTimer=setTimeout(()=>{ syncHistory(); checkNewDevices(); },6000);
 }
 
 let lastDayShown = '';
