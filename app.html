@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
 <title>marsX – Private End-to-End Encrypted Messenger | Free Chat, Voice &amp; Video Calls</title>
 <meta name="description" content="marsX is a private messenger with end-to-end encryption. Send secure messages, photos, voice notes, GIFs and location, and make free voice &amp; video calls. No ads, no tracking. Sign up free.">
 <meta name="keywords" content="marsX, private messenger, end-to-end encrypted chat, secure messaging app, encrypted video call, free voice call, secure chat app, privacy messenger, E2EE">
@@ -401,7 +401,19 @@ html{touch-action:pan-x pan-y;-webkit-text-size-adjust:100%;text-size-adjust:100
   body.kb .chead{padding-top:max(14px,env(safe-area-inset-top))}
 }
 
+/* ===== no-zoom / fully sticky chat ===== */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}
+@media (max-width:960px){
+  input,textarea,select,.pill input{font-size:16px!important}
+  #otpCode{font-size:22px!important}
+  .pill input{font-size:17px!important}
+}
 /* ===== mobile stability fixes ===== */
+html{overflow-x:hidden;max-width:100%}
+@media (max-width:960px){
+  input,textarea,select{font-size:16px}
+  input,textarea{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+}
 html{-webkit-tap-highlight-color:transparent}
 .msgs,.ci,#listBody,.sheet,.mo,.modal{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 @media (max-width:960px){
@@ -673,6 +685,13 @@ body.kb .from{display:none}
   vv.addEventListener('resize',burst); vv.addEventListener('scroll',apply);
   window.addEventListener('orientationchange',()=>setTimeout(()=>{ maxH=window.innerHeight; lastH=-1; burst(); },350));
   window.addEventListener('pageshow',burst);
+  // never touch the viewport meta (that caused the zoom); just keep the page pinned at 0,0
+  function pin(){ if(window.scrollX||window.scrollY) window.scrollTo(0,0); if(document.scrollingElement&&document.scrollingElement.scrollTop) document.scrollingElement.scrollTop=0; }
+  window.addEventListener('scroll',pin,{passive:true});
+  vv.addEventListener('resize',()=>{ pin(); burst(); });
+  vv.addEventListener('scroll',pin);
+  document.addEventListener('focusin',()=>{ pin(); [0,60,150,300,500].forEach(t=>setTimeout(pin,t)); });
+  document.addEventListener('focusout',()=>setTimeout(pin,120));
   document.addEventListener('focusin',e=>{ if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) burst(); });
   document.addEventListener('focusout',()=>setTimeout(burst,50));
   // while keyboard is up, dragging the header/composer must not pan the page (iOS)
@@ -2103,7 +2122,7 @@ function openAddContact(){
   go.onclick=find; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') find(); });
   modal(h('div',{class:'sheet'}, h('h2',{},'Add a friend'), h('p',{},'Find someone with their email address, phone number or the unique UID number shown in their Settings.'),
     inp, err, res, go, h('button',{class:'btn ghost',onclick:closeModal,style:'margin-top:10px'},'Close')));
-  setTimeout(()=>inp.focus(),50);
+  setTimeout(()=>inp.focus({preventScroll:true}),50);
 }
 
 /* ---------------- chat view ---------------- */
@@ -2288,7 +2307,7 @@ function renderChat(){
     };
     rec.start();
   }
-  if(window.innerWidth>960) setTimeout(()=>input.focus(),50);
+  if(window.innerWidth>960) setTimeout(()=>input.focus({preventScroll:true}),50);
 }
 
 /* ---------------- bubbles ---------------- */
@@ -2408,7 +2427,7 @@ function setReply(uid,it){
   rbarEl.append(h('div',{class:'rt'},h('b',{},'Replying to '+(it.from===me.uid?'yourself':firstName(it.from))),h('span',{},replyTo.x)),
     h('button',{class:'icon-btn','aria-label':'Cancel reply',onclick:()=>{ replyTo=null; rbarEl.classList.add('hidden'); }},svg('x')));
   rbarEl.classList.remove('hidden');
-  const inp=document.querySelector('#chatCard .pill input'); if(inp) inp.focus();
+  const inp=document.querySelector('#chatCard .pill input'); if(inp) inp.focus({preventScroll:true});
 }
 function jumpTo(k){
   const el=document.querySelector('#msgs [data-k="'+CSS.escape(k)+'"]');
