@@ -7,13 +7,18 @@ self.addEventListener('push', e => {
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (wins.some(w => w.visibilityState === 'visible')) return;   // app is open and visible: no need
-    await self.registration.showNotification('marsX', {
-      body: 'You have a new message or call',
-      tag: 'marsx-msg',
+    let d = null;
+    try { d = e.data ? e.data.json() : null; } catch (_) {}
+    const isCall = !!(d && (d.kind === 'call' || d.kind === 'videocall'));
+    await self.registration.showNotification((d && d.title) || 'marsX', {
+      body: (d && d.body) || 'You have a new message or call',
+      tag: (d && d.tag) || 'marsx-msg',
       renotify: true,
+      requireInteraction: isCall,                       // call notification stays until tapped
+      vibrate: isCall ? [500, 250, 500, 250, 500, 250, 500] : [120],
       icon: 'icon-192.png',
       badge: 'icon-192.png',
-      data: { url: self.registration.scope }
+      data: { url: self.registration.scope, chat: d && d.chat }
     });
   })());
 });
