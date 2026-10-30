@@ -1158,21 +1158,26 @@ const PUSH_URL='https://marsx-push.sgursharn076.workers.dev';          // your p
 const PUSH_PUBLIC_KEY='BKPW1IMfcqHEu3_p54yBip_jo6VOfRRfERH_lNFkujtRtzj0kUeFerXXdSx3XWm-hUFoG73k6_NeIy0khqTEYPA';
 const b64uBytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(s.length/4)*4,'=')),c=>c.charCodeAt(0));
 async function pushCall(path,body){ const t=await auth.currentUser.getIdToken(); return fetch(PUSH_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); }
+const PUSH_DEBUG=true;   // shows push status toasts; set to false once it works
+const pdbg=m=>{ if(PUSH_DEBUG){ try{ toast('Push: '+m); }catch(_){} } console.log('[push]',m); };
 async function setupPush(){
   try{
-    if(!PUSH_URL||!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)||!me||!dev) return;
-    const reg=await navigator.serviceWorker.register('sw.js');
+    if(!PUSH_URL){ pdbg('PUSH_URL empty'); return; }
+    if(!('serviceWorker' in navigator)){ pdbg('no service worker support'); return; }
+    if(!('PushManager' in window)){ pdbg('no push support (iPhone: use Add to Home Screen)'); return; }
+    if(!('Notification' in window)||!me||!dev){ pdbg('no Notification API'); return; }
+    const reg=await navigator.serviceWorker.register('sw.js'); pdbg('sw registered, permission='+Notification.permission);
     if(Notification.permission==='default'){
       // browsers (esp. iPhone) only allow the prompt after a tap
       const ask=async()=>{ document.removeEventListener('click',ask,true); try{ if(await Notification.requestPermission()==='granted') setupPush(); }catch(_){} };
       document.addEventListener('click',ask,true); return;
     }
-    if(Notification.permission!=='granted') return;
+    if(Notification.permission!=='granted'){ pdbg('notifications blocked in browser settings'); return; }
     const rdy=await navigator.serviceWorker.ready;
     let sub=await rdy.pushManager.getSubscription();
     if(!sub) sub=await rdy.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uBytes(PUSH_PUBLIC_KEY)});
-    await pushCall('/subscribe',{sub:sub.toJSON(),dev:dev.id});
-  }catch(e){ console.warn('push setup',e); }
+    const r=await pushCall('/subscribe',{sub:sub.toJSON(),dev:dev.id}); pdbg('subscribe '+r.status+(r.ok?' OK':' FAILED '+await r.text()));
+  }catch(e){ console.warn('push setup',e); pdbg('error: '+(e&&e.message||e)); }
 }
 function pushNotify(uid,payload){
   try{
@@ -1181,7 +1186,7 @@ function pushNotify(uid,payload){
     if(['react','vote','unsend','calllog','sys'].includes(t)) return;
     if(t==='call'&&payload.k!=='offer') return;
     const to=isGroup(uid)?othersOf(uid):[uid];
-    if(to.length) pushCall('/notify',{to}).catch(()=>{});
+    if(to.length) pushCall('/notify',{to}).then(async r=>pdbg('notify '+r.status+' '+(await r.text()).slice(0,80))).catch(e=>pdbg('notify error: '+(e&&e.message||e)));
   }catch(_){}
 }
 /* ---------------- preferences, groups, receipts, polls ---------------- */
