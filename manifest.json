@@ -1,7 +1,7 @@
 {
   "name": "marsX",
   "short_name": "marsX",
-  "start_url": "./",
+  "start_url": "./app",
   "scope": "./",
   "display": "standalone",
   "background_color": "#3B82F6",
