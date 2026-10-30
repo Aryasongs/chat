@@ -3,6 +3,8 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
+const APP_URL = '/app';   // the chat app lives at /app (landing page is at /)
+
 self.addEventListener('push', e => {
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -18,7 +20,7 @@ self.addEventListener('push', e => {
       vibrate: isCall ? [500, 250, 500, 250, 500, 250, 500] : [120],
       icon: 'icon-192.png',
       badge: 'icon-192.png',
-      data: { url: self.registration.scope, chat: d && d.chat }
+      data: { url: APP_URL, chat: d && d.chat }
     });
   })());
 });
@@ -27,7 +29,11 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const w of wins) { if ('focus' in w) return w.focus(); }
-    return self.clients.openWindow((e.notification.data && e.notification.data.url) || '/');
+    // prefer a window that already has the chat app open (not the landing page)
+    const appWin = wins.find(w => new URL(w.url).pathname.replace(/\/$/, '').startsWith('/app'));
+    const target = appWin || wins[0];
+    if (appWin && 'focus' in appWin) return appWin.focus();
+    if (target && 'navigate' in target) { try { await target.navigate(APP_URL); return target.focus(); } catch (_) {} }
+    return self.clients.openWindow((e.notification.data && e.notification.data.url) || APP_URL);
   })());
 });
