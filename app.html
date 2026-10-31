@@ -1181,6 +1181,7 @@ async function onUser(user){
   }catch(e){ console.error(e); toast('Error: '+(e.message||e)); show('authStage'); }
 }
 auth.onAuthStateChanged(onUser);
+setTimeout(()=>{ try{ if(typeof REACTS!=='undefined') REACTS.forEach(e=>animEmoji(e,24)); }catch(_){} },4000);   // warm the emoji cache in the background
 
 async function startApp(){
   // publish this device's public key (never the private key)
@@ -1886,7 +1887,7 @@ function makePC(c,ice){
   pc.ontrack=e=>{ (e.streams&&e.streams[0]?e.streams[0].getTracks():[e.track]).forEach(t=>c.remote.addTrack(t)); attachRemote(c); };
   pc.onconnectionstatechange=()=>{
     if(call!==c) return; const s=pc.connectionState;
-    if(s==='connected'){ clearTimeout(c.dropT); clearTimeout(c.connT); if(!c.t0){ c.t0=Date.now(); stopTone(); beep('on'); setCallState('connected'); } }
+    if(s==='connected'){ clearTimeout(c.dropT); clearTimeout(c.connT); if(!c.t0){ c.t0=Date.now(); applyAudioRoute(c); stopTone(); beep('on'); setCallState('connected'); } }
     else if(s==='disconnected'){ clearTimeout(c.dropT); c.dropT=setTimeout(()=>{ if(call===c&&pc.connectionState!=='connected'){ toast('Connection lost'); hangup(); } },7000); }
     else if(s==='failed'){ toast('Call failed'); hangup(); }
   };
@@ -1895,6 +1896,7 @@ function makePC(c,ice){
 function attachRemote(c){
   if(!c.aEl){ c.aEl=h('audio',{playsinline:''}); c.aEl.autoplay=true; document.body.append(c.aEl); }
   c.aEl.srcObject=c.remote; c.aEl.play().catch(()=>{});
+  applyAudioRoute(c);
   if(callUI.rv&&c.v){ callUI.rv.srcObject=c.remote; callUI.rv.play().catch(()=>{}); }
   updateCallUI();
 }
@@ -2030,14 +2032,23 @@ function updateCallUI(){
 }
 function toggleMute(){ const c=call; if(!c||!c.local) return; c.muted=!c.muted; c.local.getAudioTracks().forEach(t=>{ t.enabled=!c.muted; }); updateCallUI(); }
 function toggleCam(){ const c=call; if(!c||!c.local) return; c.camOff=!c.camOff; c.local.getVideoTracks().forEach(t=>{ t.enabled=!c.camOff; }); updateCallUI(); }
+/* Audio route: voice calls start on the earpiece, video calls on the loudspeaker; the Speaker button switches. */
+async function applyAudioRoute(c){
+  if(!c) return; const spk=!!c.spk;
+  try{ if(navigator.audioSession) navigator.audioSession.type = spk ? 'auto' : 'play-and-record'; }catch(_){}       // iPhone / iPad Safari
+  const el=c.aEl; if(!(el&&el.setSinkId&&navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)) return;
+  try{
+    const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput');
+    let id='default';
+    if(spk){ const d=ds.find(d=>/speaker/i.test(d.label)&&!/ear/i.test(d.label)); if(d) id=d.deviceId; }
+    else{ const d=ds.find(d=>/earpiece|receiver|handset/i.test(d.label)); if(d) id=d.deviceId; else if(ds.some(d=>d.deviceId==='communications')) id='communications'; }
+    await el.setSinkId(id);
+  }catch(_){}
+}
 async function toggleSpeaker(){
   const c=call; if(!c) return; c.spk=!c.spk; updateCallUI();
-  const el=c.aEl;
-  if(el&&el.setSinkId&&navigator.mediaDevices.enumerateDevices){
-    try{ const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput');
-      const pick=c.spk?ds.find(d=>/speaker/i.test(d.label)):ds.find(d=>/earpiece|receiver|handset|phone/i.test(d.label));
-      await el.setSinkId(pick?pick.deviceId:'default'); }catch(_){}
-  } else toast('On iPhone, switch speaker from the audio output button in Control Centre');
+  await applyAudioRoute(c);
+  if(!navigator.audioSession && !(c.aEl&&c.aEl.setSinkId) && /iPhone|iPad/.test(navigator.userAgent)) toast('On this iPhone, switch speaker from the audio output button in Control Centre');
 }
 
 /* ---------------- GIFs (GIPHY) ---------------- */
@@ -2648,7 +2659,7 @@ async function getMedia(uid,it){
    Animated emoji (Apple-style art + Instagram-style spring animations) + iMessage-style effects
    ===================================================================== */
 /* Emoji art: Microsoft Fluent Emoji (MIT) via LobeHub CDN. Animated version first, then Fluent 3D, then Apple/Twemoji as a last resort. */
-const FL_ANIM=new Map(), FL_NOANIM=new Set();
+const FL_ANIM=new Map(), FL_NOANIM=new Set(), FL_STATIC=new Map();
 function webpDur(buf){                       // total length of one loop of an animated WebP (ms), 0 if not animated
   try{ const d=new DataView(buf); if(d.byteLength<30||d.getUint32(0)!==0x52494646) return 0;
     let p=12,t=0,n=0; while(p+8<=d.byteLength){ const id=d.getUint32(p), sz=d.getUint32(p+4,true);
@@ -2656,12 +2667,19 @@ function webpDur(buf){                       // total length of one loop of an a
       p+=8+sz+(sz&1); }
     return n>1?Math.max(t,200):0; }catch(_){ return 0; }
 }
+let animQ=0; const animWait=[];
+function animSlot(){ return new Promise(res=>{ const go=()=>{ animQ++; res(()=>{ animQ--; const n=animWait.shift(); if(n) n(); }); }; animQ<3?go():animWait.push(go); }); }
 async function loadAnimEmoji(names){
-  for(const c of names){
-    try{ const r=await fetch('https://cdn.jsdelivr.net/gh/lobehub/fluent-emoji/packages/anim/assets/'+c+'.webp'); if(!r.ok) continue;
-      const buf=await r.arrayBuffer(), dur=webpDur(buf); if(dur) return {buf,dur,still:null}; }catch(_){}
-  }
-  return null;
+  const rel=await animSlot();
+  try{
+    const rs=await Promise.all(names.map(async c=>{
+      const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),8000);
+      try{ const r=await fetch('https://cdn.jsdelivr.net/gh/lobehub/fluent-emoji/packages/anim/assets/'+c+'.webp',{signal:ctl.signal,cache:'force-cache'}); if(!r.ok) return null;
+        const buf=await r.arrayBuffer(), dur=webpDur(buf); return dur?{buf,dur,still:null}:null; }catch(_){ return null; }
+      finally{ clearTimeout(t); }
+    }));
+    return rs.find(Boolean)||null;
+  } finally{ rel(); }
 }
 /* Emoji art: Microsoft Fluent Emoji (MIT) via LobeHub CDN. The animation plays ONCE (when the message is shown) and then rests on a still frame; tap a big emoji to play it again. */
 function animEmoji(e,size){
@@ -2676,9 +2694,9 @@ function animEmoji(e,size){
   const im=h('img',{class:'ae ae-in'+(big?' tap':''),alt:e,draggable:'false',referrerpolicy:'no-referrer',style:'--s:'+size+'px'});
   const springAgain=()=>{ im.classList.remove('ae-in'); void im.offsetWidth; im.classList.add('ae-in'); };
   const staticArt=()=>{                       // no animated version: still Fluent 3D (then Apple / Twemoji), spring-in once
-    const list=[...names.map(F3),...names.map(A),T(full)]; let i=0;
+    const list=[...names.map(F3),...names.map(A),T(full)], k=FL_STATIC.get(e); let i=0; if(k){ const j=list.indexOf(k); if(j>0) i=j; }
     im.onerror=()=>{ i++; if(i<list.length) im.src=list[i]; else if(im.parentNode) im.replaceWith(txt()); };
-    im.onload=null; if(big) im.onclick=springAgain; im.src=list[0];
+    im.onload=()=>{ FL_STATIC.set(e,list[i]); }; if(big) im.onclick=springAgain; im.src=list[i];
   };
   const showAnim=rec=>{
     let cur=null, timer=null;
@@ -2691,13 +2709,14 @@ function animEmoji(e,size){
     play();
   };
   const hit=FL_ANIM.get(e);
-  if(hit) showAnim(hit);
-  else if(FL_NOANIM.has(e)||!window.fetch) staticArt();
-  else loadAnimEmoji(names).then(rec=>{
-    if(!rec){ FL_NOANIM.add(e); staticArt(); return; }
-    FL_ANIM.set(e,rec); if(FL_ANIM.size>40) FL_ANIM.delete(FL_ANIM.keys().next().value);
-    showAnim(rec);
-  });
+  if(hit){ showAnim(hit); return im; }
+  staticArt();                                  // a small still image appears straight away...
+  if(size>=40 && window.fetch && !FL_NOANIM.has(e))   // ...and the animation (bigger file) swaps in when it has downloaded
+    loadAnimEmoji(names).then(rec=>{
+      if(!rec){ FL_NOANIM.add(e); return; }
+      FL_ANIM.set(e,rec); if(FL_ANIM.size>40) FL_ANIM.delete(FL_ANIM.keys().next().value);
+      if(im.parentNode) showAnim(rec);
+    });
   return im;
 }
 function floatReact(key,e){
