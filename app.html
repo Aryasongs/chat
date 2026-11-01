@@ -148,6 +148,32 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 #voview img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
 #voview .vot{position:absolute;top:calc(env(safe-area-inset-top,0px) + 16px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;color:#fff;background:rgba(255,255,255,.16);padding:8px 16px;border-radius:20px;font:500 13px var(--head);backdrop-filter:blur(8px);white-space:nowrap}
 #voview .vot svg{width:18px;height:18px}
+.fchips{display:flex;gap:8px;overflow-x:auto;margin:0 -32px;padding:0 32px 12px;scrollbar-width:none;flex:none}
+.fchips::-webkit-scrollbar{display:none}
+.fchip{flex:none;height:34px;padding:0 16px;border-radius:17px;background:var(--soft);color:var(--muted);font:500 14px var(--head);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.fchip.on{background:var(--navy);color:var(--card)}
+.fchip .fc{min-width:18px;height:18px;border-radius:9px;background:var(--blue);color:#fff;font-size:11px;display:grid;place-items:center;padding:0 5px}
+.lh{font:600 13px var(--head);color:var(--muted);padding:14px 0 0;letter-spacing:.6px}
+#tabChats{position:relative}
+#astrip{position:absolute;right:2px;top:200px;bottom:40px;z-index:5;display:none;flex-direction:column;justify-content:space-between;align-items:center;font:600 10px var(--head);color:var(--muted);touch-action:none;-webkit-user-select:none;user-select:none;padding:2px 6px}
+#astrip.on{display:flex}
+#astrip span{line-height:1;padding:1px 0}
+.dgate{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
+.dg-card{width:min(440px,100%);background:var(--card);border-radius:32px;padding:28px 24px 22px;text-align:center;box-shadow:0 20px 60px rgba(45,42,94,.12);animation:moin .2s ease-out}
+.dg-ic{width:64px;height:64px;border-radius:50%;background:var(--navy);color:var(--card);display:grid;place-items:center;margin:0 auto 14px}
+.dg-ic svg{width:30px;height:30px}
+.dg-card h2{font:600 22px var(--head);color:var(--navy);margin:0 0 8px}
+.dg-card p{font-size:14px;line-height:1.55;color:var(--muted);margin:0 0 6px}
+.dg-info{background:var(--soft);border-radius:18px;padding:6px 16px;margin:14px 0;text-align:left}
+.dg-info div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:13.5px;color:var(--navy)}
+.dg-info small{color:var(--muted);font-size:13px}
+.dg-info div+div{border-top:1px solid var(--line)}
+.dg-code{width:100%;height:60px;border-radius:30px;border:2px solid transparent;background:var(--soft);text-align:center;font:600 28px var(--head);letter-spacing:10px;color:var(--navy);outline:none;margin:6px 0 4px}
+.dg-code:focus{border-color:var(--blue)}
+.dg-or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;margin:18px 0 12px}
+.dg-or::before,.dg-or::after{content:"";flex:1;height:1px;background:var(--line)}
+.dg-big{font:700 38px var(--head);letter-spacing:8px;color:var(--navy);margin:10px 0 14px}
+.dg-card .link{display:block;margin:12px auto 0}
 .sec{margin-bottom:22px}
 .sec h3{font:500 13px var(--head);color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:0 0 10px}
 .me-card{display:flex;gap:16px;align-items:center;padding:6px 0 18px}
@@ -694,7 +720,9 @@ body.kb .from{display:none}
     <div class="panel" id="tabChats">
       <div class="panel-top"><h1 id="ptTitle"><span class="mxl" role="img" aria-label="marsX"></span></h1><button class="icon-btn" id="searchBtn" aria-label="Search"></button></div>
       <div class="searchbar" id="sbar"><input id="sIn" placeholder="Search…"></div>
+      <div class="fchips" id="fchips"></div>
       <div class="scroll" id="listBody"></div>
+      <div id="astrip"></div>
     </div>
     <button class="fab" id="fab" aria-label="New chat"></button>
     <nav class="nav">
@@ -1185,7 +1213,8 @@ setTimeout(()=>{ try{ if(typeof REACTS!=='undefined') REACTS.forEach(e=>animEmoj
 
 async function startApp(){
   // publish this device's public key (never the private key)
-  await R(`devices/${me.uid}/${dev.id}`).set({ pub:dev.pub, label:deviceLabel(), ts:TS });
+  if(!(await deviceGate())) return;                                   // new devices must be approved first
+  await R(`devices/${me.uid}/${dev.id}`).update({ pub:dev.pub, label:deviceLabel(), ts:TS });
   show('appStage');
   // presence
   const pr = R('presence/'+me.uid);
@@ -1196,9 +1225,11 @@ async function startApp(){
   const mp = R('users/'+me.uid); const mf = mp.on('value', s=>{ if(s.exists()){ myProf={uid:me.uid,...s.val()}; if(tab==='settings') renderList(); } });
   watchers.push(()=>mp.off('value',mf));
   { const dr=R('devices/'+me.uid), df=dr.on('value',s=>{ devSnap(me.uid)(s); scheduleDevCheck(); }); watchers.push(()=>{ dr.off('value',df); delete devCache[me.uid]; delete devOk[me.uid]; }); }
+  watchDeviceRequests();
   { const hr=R('histKeys/'+me.uid+'/'+dev.id), hf=hr.on('value',s=>{ histMap=s.val()||{}; clearTimeout(hrT); hrT=setTimeout(reprocessHist,500); },()=>{}); watchers.push(()=>hr.off('value',hf)); }
   await startModWatch();
   // contacts
+  loadAliases();
   const cr = R('contacts/'+me.uid);
   const cf = cr.on('value', s => syncContacts(Object.keys(s.val()||{})));
   watchers.push(()=>cr.off('value',cf));
@@ -1223,7 +1254,7 @@ function deviceLabel(){
 function syncContacts(uids){
   uids.forEach(uid => {
     if(contactWatch[uid]) return;
-    const pr = R('users/'+uid), pf = pr.on('value', s=>{ if(s.exists()){ contacts[uid]={uid,...s.val()}; renderAll(); } });
+    const pr = R('users/'+uid), pf = pr.on('value', s=>{ if(s.exists()){ const pv=s.val(); contacts[uid]={uid,...pv,pname:pv.name,name:dispName(uid,pv.name)}; renderAll(); } });
     const pp = R('presence/'+uid), ppf = pp.on('value', s=>{ presence[uid]=s.val()||{}; renderAll(); });
     const dr = R('devices/'+uid), df = dr.on('value', devSnap(uid));
     threads[uid] = threads[uid] || { items:[], last:null, unread:0, chain:Promise.resolve() };
@@ -1336,7 +1367,7 @@ async function devicesOf(u){
   if(devOk[u]) return devCache[u] || {};            // live copy, zero network wait
   const c=devTTL[u]; if(c && Date.now()-c.t<60000) return c.v;
   const s = await R('devices/'+u).once('value'); const v=s.val()||{}, o={};
-  for(const [id,d] of Object.entries(v)){ o[id]=d.pub; pubCache.set(u+'/'+id,d.pub); }
+  for(const [id,d] of Object.entries(v)){ if(d.ok===false) continue; o[id]=d.pub; pubCache.set(u+'/'+id,d.pub); }
   devTTL[u]={t:Date.now(),v:o};
   return o;
 }
@@ -1346,7 +1377,7 @@ async function targetDevices(key){
   const all = await Promise.all(us.map(devicesOf));
   return Object.assign({}, ...all);
 }
-function devSnap(u){ return s=>{ const v=s.val()||{}, o={}; for(const [id,d] of Object.entries(v)) o[id]=d.pub; devCache[u]=o; devOk[u]=true; }; }
+function devSnap(u){ return s=>{ const v=s.val()||{}, o={}; for(const [id,d] of Object.entries(v)){ if(d.ok===false) continue; o[id]=d.pub; } devCache[u]=o; devOk[u]=true; }; }
 async function sendPayload(uid, payload, mediaDataUrl){
   { const dmv=getDM(uid); if(dmv && payload && !['react','vote','unsend','calllog','sys','dm','call','vo'].includes(payload.t)) payload={...payload,ex:Date.now()+dmv}; }
   const targets = await targetDevices(uid);
@@ -1472,7 +1503,7 @@ function memberPicker(people,sel){
 }
 function openNewMenu(){
   modal(h('div',{class:'sheet'}, h('h2',{},'New'),
-    h('button',{class:'item',onclick:()=>{ closeModal(); openAddContact(); }}, svg('user2'), h('span',{},'Add a friend',h('span',{class:'sub'},'By email, phone number or UID'))),
+    h('button',{class:'item',onclick:()=>{ closeModal(); openAddContact(); }}, svg('user2'), h('span',{},'New contact',h('span',{class:'sub'},'By email, phone number or UID'))),
     h('button',{class:'item',onclick:()=>{ closeModal(); openNewGroup(); }}, svg('users'), h('span',{},'New group',h('span',{class:'sub'},'Chat with several people, with polls'))),
     h('button',{class:'btn ghost',style:'margin-top:14px',onclick:closeModal},'Cancel')));
 }
@@ -1775,6 +1806,7 @@ function openContactInfo(uid){
   const act=(ic,label,fn,cls)=>h('button',{class:cls||'',onclick:fn},svg(ic),label);
   const row=(label,val)=>h('div',{class:'ci-row'},h('small',{},label),h('span',{},val));
   const info=h('div',{class:'ci-group'}, row('About', (c.about&&c.about!=='null'&&c.about!=='undefined')?c.about:'Hey there! I’m using marsX.'));
+  if(c.pname&&c.pname!==c.name) info.append(row('Profile name', c.pname));
   if(c.phonePub) info.append(row('Phone number', c.phonePub));
   cleanLinks(c.links).forEach(l=>info.append(h('a',{class:'ci-row lk',href:l.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},l.t),h('span',{},l.u.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))));
   if(c.uidNum) info.append(row('UID number', String(c.uidNum)));
@@ -1791,6 +1823,7 @@ function openContactInfo(uid){
     h('div',{class:'ci-hero'}, av, h('h2',{},c.name), h('div',{class:'st'},status)),
     h('div',{class:'ci-acts'},
       act('chat','Message',close),
+      act('edit','Edit name',()=>{ close(); openRenameContact(uid); }),
       act('image','Wallpaper',()=>openWallpaper(uid)),
       blocked ? act('ban','Unblock',async()=>{ await unblockUser(uid); close(); }) : act('ban','Block',()=>{ close(); confirmBlock(uid); },'dg')),
     info,
@@ -2116,16 +2149,53 @@ function toggleArchive(u){ const a=getArch(); if(isArchived(u)) delete a[u]; els
 function openListActions(uid){
   const c=contacts[uid]; if(!c) return;
   modal(h('div',{class:'sheet'}, h('h2',{},c.name),
-    h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, h('span',{style:'font-size:20px'},'📌'), isPinned(uid)?'Unpin chat':'Pin chat'),
-    h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, h('span',{style:'font-size:20px'},'🗄️'), isArchived(uid)?'Unarchive chat':'Archive chat'),
+    tab==='chats'?h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, h('span',{style:'font-size:20px'},'📌'), isPinned(uid)?'Unpin chat':'Pin chat'):null,
+    tab==='chats'?h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, h('span',{style:'font-size:20px'},'🗄️'), isArchived(uid)?'Unarchive chat':'Archive chat'):null,
+    h('button',{class:'item',onclick:()=>{ closeModal(); toggleFav(uid); }}, h('span',{style:'font-size:20px'},'⭐'), isFav(uid)?'Remove from favourites':'Add to favourites'),
+    isGroup(uid)?null:h('button',{class:'item',onclick:()=>{ closeModal(); openRenameContact(uid); }}, svg('edit'), 'Edit contact name'),
+    tab==='contacts'&&!isGroup(uid)?h('button',{class:'item danger',onclick:()=>{ closeModal(); confirmDeleteContact(uid); }}, svg('trash'), 'Delete contact'):null,
     h('button',{class:'btn ghost',style:'margin-top:14px',onclick:closeModal},'Cancel')));
+}
+/* ---------- filters, favourites, A-Z (per device) ---------- */
+let chFilter='all', ctFilter='all';
+const getFavs=()=>LSJ.get('fav:'+me.uid,[]), isFav=u=>getFavs().includes(u);
+function toggleFav(u){ const a=getFavs(), on=!a.includes(u); LSJ.set('fav:'+me.uid, on?[...a,u]:a.filter(x=>x!==u)); toast(on?'Added to favourites':'Removed from favourites'); renderList(); }
+const nameKey=c=>(c.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+const hKey=c=>{ const x=nameKey(c)[0]; return x&&/[a-z]/i.test(x)?x.toUpperCase():'#'; };
+function renderChips(){
+  const bar=$('#fchips'); if(!bar) return;
+  if(!(tab==='chats'||tab==='contacts')){ bar.style.display='none'; return; }
+  const opts=tab==='chats'?[['all','All'],['unread','Unread'],['groups','Groups'],['fav','Favourites']]:[['all','All'],['fav','Favourites'],['online','Online']];
+  const cur=tab==='chats'?chFilter:ctFilter, un=Object.values(contacts).filter(c=>threads[c.uid]&&threads[c.uid].unread>0).length;
+  bar.style.display=''; bar.innerHTML='';
+  opts.forEach(([k,l])=>bar.append(h('button',{class:'fchip'+(cur===k?' on':''),onclick:()=>{ if(tab==='chats') chFilter=k; else ctFilter=k; renderList(); }}, l, k==='unread'&&un?h('span',{class:'fc'},un>99?'99+':un):null)));
+}
+function setStrip(letters){
+  const st=$('#astrip'); if(!st) return; st.innerHTML='';
+  if(!letters||letters.length<3){ st.classList.remove('on'); return; }
+  st.classList.add('on');
+  letters.forEach(k=>st.append(h('span',{},k)));
+  const jump=y=>{ const r=st.getBoundingClientRect(); const i=Math.min(letters.length-1,Math.max(0,Math.floor((y-r.top)/r.height*letters.length)));
+    const body=$('#listBody'), el=body.querySelector('[data-l="'+letters[i]+'"]'); if(el) body.scrollTop+=el.getBoundingClientRect().top-body.getBoundingClientRect().top; };
+  let down=false;
+  st.onpointerdown=e=>{ down=true; try{ st.setPointerCapture(e.pointerId); }catch(_){} jump(e.clientY); };
+  st.onpointermove=e=>{ if(down) jump(e.clientY); };
+  st.onpointerup=st.onpointercancel=()=>{ down=false; };
 }
 function renderList(){
   const body=$('#listBody'); if(!body||!me) return; const q=$('#sIn').value.trim().toLowerCase();
+  renderChips(); setStrip([]);
   const top = body.scrollTop; body.innerHTML='';
   if(tab==='chats'||tab==='contacts'){
-    let list = sortedContacts().filter(c=>(tab==='chats'||!c.isGroup) && (!q||c.name.toLowerCase().includes(q)||String(c.uidNum||'').includes(q)));
-    if(tab==='chats'&&!q){
+    let list = sortedContacts().filter(c=>(tab==='chats'||!c.isGroup) && (!q||c.name.toLowerCase().includes(q)||String(c.pname||'').toLowerCase().includes(q)||String(c.uidNum||'').includes(q)));
+    if(tab==='contacts'){
+      list=list.slice().sort((a,b)=>{ const la=/^[a-z]/i.test(nameKey(a)), lb=/^[a-z]/i.test(nameKey(b)); return la!==lb?(la?-1:1):nameKey(a).localeCompare(nameKey(b),undefined,{sensitivity:'base'}); });
+      if(ctFilter==='fav') list=list.filter(c=>isFav(c.uid));
+      if(ctFilter==='online') list=list.filter(c=>presence[c.uid]&&presence[c.uid].online);
+    } else if(chFilter!=='all'){
+      list=list.filter(c=>chFilter==='unread'?(threads[c.uid]&&threads[c.uid].unread>0):chFilter==='groups'?!!c.isGroup:isFav(c.uid));
+    }
+    if(tab==='chats'&&!q&&chFilter==='all'){
       const al=list.filter(c=>isArchived(c.uid)); list=list.filter(c=>!isArchived(c.uid));
       if(showArch&&al.length){
         body.append(h('button',{class:'row arch',onclick:()=>{ showArch=false; renderList(); }},h('div',{class:'ico'},'←'),h('div',{class:'body'},h('div',{class:'top'},h('div',{class:'name'},'Archived chats')),h('div',{class:'prev'},h('div',{class:'txt'},'Tap to go back')))));
@@ -2137,25 +2207,33 @@ function renderList(){
         list=[...list.filter(c=>isPinned(c.uid)),...list.filter(c=>!isPinned(c.uid))];
       }
     }
-    if(!list.length&&!(tab==='chats'&&!q&&body.children.length)){
-      body.append(h('div',{class:'empty'}, h('b',{}, q?'No results':'No chats yet'), q?'':'Tap the blue button to add a friend or create a group.'));
+    if(tab==='chats'&&(q||chFilter!=='all')) list=[...list.filter(c=>isPinned(c.uid)),...list.filter(c=>!isPinned(c.uid))];
+    const sec=tab==='contacts'&&ctFilter==='all'&&!q; let curH=null; const letters=[];
+    if(sec){ const fv=list.filter(c=>isFav(c.uid)); list=[...fv,...list.filter(c=>!isFav(c.uid))]; }
+    if(!list.length&&!(tab==='chats'&&!q&&chFilter==='all'&&body.children.length)){
+      const fl=tab==='chats'?chFilter:ctFilter;
+      const ttl=q?'No results':fl==='unread'?'No unread chats':fl==='groups'?'No groups yet':fl==='fav'?'No favourites yet':fl==='online'?'Nobody is online':tab==='contacts'?'No contacts yet':'No chats yet';
+      const sub=q?'':(fl==='fav'?'Press and hold a chat or contact, then choose Add to favourites.':fl==='all'?'Tap the blue button to add a friend or create a group.':'');
+      body.append(h('div',{class:'empty'}, h('b',{}, ttl), sub));
     }
     list.forEach(c=>{
+      if(sec){ const k=isFav(c.uid)?'★':hKey(c); if(k!==curH){ curH=k; letters.push(k); body.append(h('div',{class:'lh','data-l':k},k==='★'?'★  Favourites':k)); } }
       const t=threads[c.uid]||{}, last=t.last, on=presence[c.uid]&&presence[c.uid].online;
       let lpT=null, lpDone=false;
-      const row = h('button',{class:'row'+(openUid===c.uid?' active':''),onclick:()=>{ if(lpDone){ lpDone=false; return; } openChat(c.uid); },oncontextmenu:e=>{ if(tab!=='chats') return; e.preventDefault(); openListActions(c.uid); }},
+      const row = h('button',{class:'row'+(openUid===c.uid?' active':''),onclick:()=>{ if(lpDone){ lpDone=false; return; } openChat(c.uid); },oncontextmenu:e=>{ if(tab!=='chats'&&tab!=='contacts') return; e.preventDefault(); openListActions(c.uid); }},
         avatar(c, 76, on),
         h('div',{class:'body'},
-          h('div',{class:'top'}, h('div',{class:'name'},c.name), tab==='chats' ? h('div',{class:'time'}, last?relTime(last.ts):'', isPinned(c.uid)?h('span',{class:'pinm'},'📌'):null) : null),
+          h('div',{class:'top'}, h('div',{class:'name'},c.name,isFav(c.uid)?h('span',{class:'pinm'},'⭐'):null), tab==='chats' ? h('div',{class:'time'}, last?relTime(last.ts):'', isPinned(c.uid)?h('span',{class:'pinm'},'📌'):null) : null),
           h('div',{class:'prev'},
             h('div',{class:'txt'}, tab==='chats' ? (isBlocked(c.uid) ? '🚫 Blocked' : previewOf(last,c.uid)) : ((c.about&&c.about!=='null'&&c.about!=='undefined') ? c.about : 'UID '+c.uidNum)),
             tab==='chats' && t.unread ? h('div',{class:'badge'}, t.unread>99?'99+':t.unread) : null)));
-      if(tab==='chats'){
+      if(tab==='chats'||tab==='contacts'){
         row.addEventListener('touchstart',()=>{ lpDone=false; lpT=setTimeout(()=>{ lpDone=true; try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} openListActions(c.uid); },520); },{passive:true});
         ['touchend','touchmove','touchcancel'].forEach(ev=>row.addEventListener(ev,()=>clearTimeout(lpT),{passive:true}));
       }
       body.append(row);
     });
+    if(sec&&list.length>=12) setStrip(letters);
   } else if(tab==='calls'){
     const logs=[]; Object.keys(threads).forEach(u=>{ const c=contacts[u]; if(!c||c.isGroup) return; ((threads[u]&&threads[u].items)||[]).forEach(i=>{ if(!i.locked&&i.p&&i.p.t==='calllog') logs.push({u,i}); }); });
     logs.sort((a,b)=>b.i.ts-a.i.ts);
@@ -2188,7 +2266,7 @@ function openAccountsPage(){
   const em=(auth.currentUser&&auth.currentUser.email)||me.email||'';
   openSettingsPage('Accounts', bd=>bd.append(
     h('div',{class:'sec'}, h('h3',{},'Security'),
-      prefRow('Security notifications','Get notified when a new device is linked or your security code changes.','sn'),
+      prefRow('New device alerts','Get an alert when a new device signs in to your account.','sn'),
       navRow('mail','Email address', em, ()=>{ navigator.clipboard&&navigator.clipboard.writeText(em); toast('Email copied'); }),
       navRow('key','Change password','Update your login password', openChangePassword),
       navRow('shield','Two-step verification','Add an extra layer of security', ()=>toast('Two-step verification is coming soon'), true)),
@@ -2304,13 +2382,256 @@ function textSheet(title,paras){
     ...paras.map(x=>h('p',{style:'text-align:left;line-height:1.55;font-size:14px'},x)),
     h('button',{class:'btn',style:'margin-top:8px',onclick:closeModal},'Close')));
 }
+/* ---------------- new-device verification ----------------
+   A device that signs in while you already have trusted devices must be approved first:
+   1) a 6-digit code appears on your other device (with this device's name and place) and you type it here, or
+   2) a one-time code is sent to your email (needs the worker in device-otp-worker.js). */
+const DEV_OTP_URL='';          // e.g. 'https://marsx-device.<you>.workers.dev'  (leave empty until the worker is deployed)
+const devPreOk=new Set(), devPrompted=new Set();
+const maskEmail=e=>{ const [u,d]=String(e||'').split('@'); return u?u[0]+'***@'+d:''; };
+async function devPlace(){
+  try{ const c=new AbortController(); setTimeout(()=>c.abort(),4000); const r=await fetch('https://ipwho.is/',{signal:c.signal}); const j=await r.json(); if(j&&j.success!==false){ const t=[j.city,j.region,j.country].filter(Boolean).join(', '); if(t) return t; } }catch(_){}
+  try{ return (Intl.DateTimeFormat().resolvedOptions().timeZone||'').replace(/_/g,' '); }catch(_){ return ''; }
+}
+async function deviceGate(){
+  const all=(await R('devices/'+me.uid).once('value')).val()||{}, mine=all[dev.id];
+  if(mine&&mine.ok!==false) return true;
+  const trusted=Object.entries(all).filter(([id,d])=>id!==dev.id&&d.ok!==false);
+  if(!trusted.length){ await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:true}); return true; }   // your first device
+  await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:false});
+  return runDeviceGate();
+}
+function runDeviceGate(){
+  return new Promise(resolve=>{
+    let done=false, tries=0, mode='code', otpSent=null, otpTo='', place='', lastSend=0;
+    const gate=h('div',{class:'dgate'}); document.body.append(gate);
+    const okRef=R(`devices/${me.uid}/${dev.id}/ok`), reqRef=R(`devReq/${me.uid}/${dev.id}`);
+    const finish=ok=>{ if(done) return; done=true; okRef.off('value',l1); reqRef.off('value',l2); gate.remove(); resolve(ok); };
+    const l1=okRef.on('value',s=>{ if(s.val()===true) finish(true); },()=>{});
+    const l2=reqRef.on('value',s=>{ const v=s.val(); if(v&&v.status==='denied'&&!done){ done=true; okRef.off('value',l1); reqRef.off('value',l2); gate.innerHTML=''; gate.append(h('div',{class:'dg-card'},h('div',{class:'dg-ic'},svg('ban')),h('h2',{},'Sign-in denied'),h('p',{},'You denied this sign-in from your other device.'))); setTimeout(()=>{ gate.remove(); auth.signOut(); resolve(false); },2500); } },()=>{});
+    const err=h('div',{class:'err',style:'min-height:20px;margin:6px 0 0'});
+    const infoBox=()=>h('div',{class:'dg-info'}, h('div',{},h('small',{},'This device'),h('span',{},deviceLabel())), place?h('div',{},h('small',{},'Place'),h('span',{style:'text-align:right'},place)):null);
+    const codeInp=()=>h('input',{class:'dg-code',inputmode:'numeric',autocomplete:'one-time-code',maxlength:6,placeholder:'••••••',oninput:e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,6); }});
+    const logout=()=>h('button',{class:'link',onclick:()=>{ done=true; okRef.off('value',l1); reqRef.off('value',l2); gate.remove(); auth.signOut(); resolve(false); }},'Log out');
+    async function sendReq(){ tries=0; err.textContent=''; try{ await reqRef.set({label:deviceLabel(),loc:place,ts:TS,status:'pending'}); }catch(e){ err.textContent='Could not reach your other device. Check your connection.'; } }
+    async function otpCall(path,body){ const t=await auth.currentUser.getIdToken(); const r=await fetch(DEV_OTP_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); let j={}; try{ j=await r.json(); }catch(_){} if(!r.ok) throw new Error(j.error||'Request failed'); return j; }
+    function view(){
+      gate.innerHTML=''; err.textContent='';
+      if(mode==='code'){
+        const inp=codeInp(), go=h('button',{class:'btn',style:'margin-top:10px'},'Verify');
+        const run=async()=>{
+          const v=inp.value; if(v.length!==6){ err.textContent='Enter the 6-digit code.'; return; }
+          go.disabled=true; err.textContent='';
+          try{
+            const q=(await reqRef.once('value')).val()||{};
+            if(q.status==='locked'){ err.textContent='Too many wrong codes. Send the request again.'; go.disabled=false; return; }
+            if(!q.ch){ err.textContent='Waiting for your other device to show a code. Open marsX there.'; go.disabled=false; return; }
+            if(await sha256hex(`devcode:${me.uid}:${dev.id}:${v}`)===q.ch){ await okRef.set(true); reqRef.remove().catch(()=>{}); finish(true); return; }
+            tries++; if(tries>=5){ await reqRef.update({status:'locked'}); err.textContent='Too many wrong codes. Send the request again.'; }
+            else err.textContent='Wrong code. '+(5-tries)+(5-tries===1?' try':' tries')+' left.';
+          }catch(e){ err.textContent='Something went wrong. Try again.'; }
+          go.disabled=false;
+        };
+        go.onclick=run; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') run(); });
+        gate.append(h('div',{class:'dg-card'}, h('div',{class:'dg-ic'},svg('shield')), h('h2',{},'Verify this device'),
+          h('p',{},'For your security, approve this sign-in from a device you already use. A code is now showing on your other device. Type it here.'),
+          infoBox(), inp, err, go,
+          h('button',{class:'link',onclick:async()=>{ await sendReq(); toast('Request sent again'); }},'Send the request again'),
+          h('div',{class:'dg-or'},'Can’t use your other device?'),
+          h('button',{class:'btn ghost',onclick:()=>{ mode='otp'; view(); }},'Get a code by email'),
+          logout()));
+        setTimeout(()=>inp.focus({preventScroll:true}),80);
+      }else{
+        const inp=codeInp(), go=h('button',{class:'btn',style:'margin-top:10px'},'Verify'), sendB=h('button',{class:'btn'},otpSent?'Send a new code':'Email me a code');
+        const send=async()=>{
+          if(Date.now()-lastSend<30000){ err.textContent='Please wait a few seconds before asking again.'; return; }
+          sendB.disabled=true; err.textContent='';
+          try{ const j=await otpCall('/otp/send',{dev:dev.id}); otpSent=true; otpTo=j.to||''; lastSend=Date.now(); view(); toast('Code sent'); }
+          catch(e){ err.textContent=e.message||'Could not send the code.'; sendB.disabled=false; }
+        };
+        sendB.onclick=send;
+        const verify=async()=>{
+          if(inp.value.length!==6){ err.textContent='Enter the 6-digit code.'; return; }
+          go.disabled=true; err.textContent='';
+          try{ await otpCall('/otp/verify',{dev:dev.id,code:inp.value}); const ok=(await okRef.once('value')).val(); if(ok===true) finish(true); else{ err.textContent='Approved, finishing sign-in…'; } }
+          catch(e){ err.textContent=e.message||'Wrong code.'; go.disabled=false; }
+        };
+        go.onclick=verify; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') verify(); });
+        const body=[h('div',{class:'dg-ic'},svg('mail')), h('h2',{},'Verify by email'), infoBox()];
+        if(!DEV_OTP_URL){
+          body.push(h('p',{},'Email codes are not switched on for this app yet. Use the code from your other device.'),
+            h('button',{class:'btn ghost',style:'margin-top:12px',onclick:()=>{ mode='code'; view(); }},'Use my other device'),
+            h('button',{class:'link',onclick:async()=>{ await okRef.set(true); finish(true); }},'Skip for now (not secure)'));
+        }else if(!otpSent){
+          body.push(h('p',{},'We will email a one-time code to your account email address.'),err,sendB,h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ mode='code'; view(); }},'Use my other device'));
+        }else{
+          body.push(h('p',{},'We sent a 6-digit code to '+otpTo+'. It works for 10 minutes.'),inp,err,go,h('button',{class:'link',onclick:send},'Send a new code'),h('button',{class:'link',onclick:()=>{ mode='code'; view(); }},'Use my other device'));
+          setTimeout(()=>inp.focus({preventScroll:true}),80);
+        }
+        body.push(logout());
+        gate.append(h('div',{class:'dg-card'},...body));
+      }
+    }
+    (async()=>{
+      const pp=devPlace();
+      place=await Promise.race([pp,new Promise(r=>setTimeout(()=>r(''),2500))]);
+      if(done) return; view(); await sendReq();
+      pp.then(p=>{ if(p&&p!==place&&!done){ place=p; reqRef.update({loc:p}).catch(()=>{}); } });
+    })();
+  });
+}
+/* your trusted devices: show the approval code when a new device asks */
+let devReqBusy=false;
+function watchDeviceRequests(){
+  const r=R('devReq/'+me.uid), f=r.on('value',()=>checkDevReq(),()=>{});
+  watchers.push(()=>r.off('value',f));
+}
+async function checkDevReq(){
+  if(devReqBusy||!me||!dev) return;
+  if(document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call)){ setTimeout(checkDevReq,5000); return; }
+  devReqBusy=true;
+  try{
+    const v=(await R('devReq/'+me.uid).once('value')).val()||{};
+    for(const [id,q] of Object.entries(v)){
+      const k=id+':'+(q&&q.ts); if(id===dev.id||!q||q.status!=='pending'||devPrompted.has(k)) continue;
+      if(!q.ts||Date.now()-q.ts>15*60*1000) continue;
+      devPrompted.add(k);
+      const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0');
+      const hsh=await sha256hex(`devcode:${me.uid}:${id}:${code}`);
+      const res=await R(`devReq/${me.uid}/${id}/ch`).transaction(c=>c||hsh);
+      if(!res.committed||res.snapshot.val()!==hsh) continue;                  // another device of yours is already showing a code
+      devPreOk.add(id); { const kn=LSJ.get('kd:'+me.uid,null); if(kn&&!kn.includes(id)) LSJ.set('kd:'+me.uid,[...kn,id]); }
+      const deny=async()=>{ closeModal(); try{ await R(`devReq/${me.uid}/${id}`).update({status:'denied'}); await R(`devices/${me.uid}/${id}`).remove(); }catch(_){} toast('Sign-in denied. Change your password if this was not you.'); };
+      modal(h('div',{class:'sheet'}, h('h2',{},'New device sign-in'),
+        h('p',{},'Someone is signing in to your account. If this is you, type this code on the new device.'),
+        h('div',{class:'dg-big',style:'text-align:center'},code.slice(0,3)+' '+code.slice(3)),
+        h('div',{class:'dg-info'},
+          h('div',{},h('small',{},'Device'),h('span',{},q.label||'Unknown device')),
+          h('div',{},h('small',{},'Place'),h('span',{style:'text-align:right'},q.loc||'Unknown')),
+          h('div',{},h('small',{},'Time'),h('span',{},new Date(q.ts).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})))),
+        h('p',{style:'color:var(--danger)'},'If this is not you, tap Deny and change your password.'),
+        h('button',{class:'btn',style:'background:var(--danger);box-shadow:none',onclick:deny},'Deny'),
+        h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Close')));
+      break;
+    }
+  }catch(e){ console.warn('device request',e); }
+  devReqBusy=false;
+}
+
+/* ---------------- help, legal and about ---------------- */
+const HELP_EMAIL='help@kashishai.com', LEGAL_DATE='31 October 2026';
+function mailSupport(subject){
+  const body='\n\n---\nApp: marsX '+APP_VERSION+'\nUID: '+((myProf&&myProf.uidNum)||'')+'\nDevice: '+navigator.userAgent+'\n';
+  location.href='mailto:'+HELP_EMAIL+'?subject='+encodeURIComponent(subject||'marsX support')+'&body='+encodeURIComponent(body);
+}
+function docSheet(title,meta,blocks,withMail){
+  const out=[];
+  if(meta) out.push(h('div',{style:'font-size:12.5px;color:var(--muted);margin:-4px 0 10px;text-align:left'},meta));
+  blocks.forEach(b=>{
+    if(b.h) out.push(h('h3',{style:'font:600 15px var(--head);color:var(--navy);margin:20px 0 6px;text-align:left;text-transform:none;letter-spacing:0'},b.h));
+    (b.p||[]).forEach(t=>out.push(h('p',{style:'text-align:left;line-height:1.6;font-size:14px;margin:0 0 8px;color:var(--ink)'},t)));
+    if(b.l) out.push(h('ul',{style:'text-align:left;line-height:1.6;font-size:14px;margin:0 0 8px;padding-left:20px;color:var(--ink)'},...b.l.map(x=>h('li',{style:'margin:0 0 4px'},x))));
+  });
+  modal(h('div',{class:'sheet',style:'max-height:84vh;overflow:auto;-webkit-overflow-scrolling:touch'},
+    h('h2',{style:'text-align:left'},title),...out,
+    h('div',{style:'position:sticky;bottom:-1px;background:var(--card);padding:12px 0 2px;margin-top:12px'},
+      withMail?h('button',{class:'btn ghost',style:'margin-bottom:10px',onclick:()=>mailSupport(title)},'Email '+HELP_EMAIL):null,
+      h('button',{class:'btn',onclick:closeModal},'Close'))));
+}
+
+const TERMS_DOC=[
+ {p:["These Terms of Service (“Terms”) are a binding agreement between you and marsX (“marsX”, “we”, “us”), a service operated under the Kashish AI brand (kashishai.com). They apply to your use of the marsX app and website (the “Service”). Please read them carefully. If you do not agree, do not use the Service."]},
+ {h:"1. Who can use marsX",l:["You must be at least 16 years old, or the minimum age at which you can legally agree to use online services in your country if that age is higher.","You must be able to form a binding contract and must not be prohibited from using the Service by law.","If you use marsX for an organisation, you confirm that you have the authority to accept these Terms for it."]},
+ {h:"2. Your account",l:["Give accurate information when you sign up (email address and name; a phone number is optional) and keep it up to date.","You are responsible for your password, your devices and everything that happens under your account. Tell us immediately at "+HELP_EMAIL+" if you think someone else has accessed your account.","An account is for one person. Do not sell, rent, share or transfer it.","Your UID number identifies you in the app. Other people can find you by your email address, phone number (if you added one) or UID."]},
+ {h:"3. Acceptable use",p:["You agree not to use marsX to:"],l:["break any law or the rights of others, or help anyone else do so;","harass, bully, threaten, stalk, defame or abuse any person, or incite hatred or violence against a person or group;","share sexual or exploitative content involving minors, or any content that sexualises or endangers children (we report this to the authorities);","share non-consensual intimate images, extreme violence, or content that promotes self-harm, terrorism or serious crime;","send spam, scams, phishing, malware or unsolicited bulk messages, or impersonate another person or organisation;","collect other people’s personal data without permission, or share another person’s private information without their consent;","attempt to break, probe, overload or bypass the security or limits of the Service, scrape it, or access it by automated means or by unofficial clients;","reverse engineer the Service, except where the law allows it despite this restriction;","create accounts to avoid a suspension or ban."]},
+ {h:"4. Your content and message privacy",p:["Your messages, photos, GIFs, voice messages, locations, polls and calls are end-to-end encrypted. We cannot read them. You keep ownership of everything you create and send.","To run the Service you give us a limited, worldwide, non-exclusive, royalty-free licence to store, transmit and deliver your content, in encrypted form, and to display your profile information (name, photo, about text, links) to other users according to your settings. This licence ends when your content is deleted or your account is closed, except for copies that other users already hold.","You are responsible for the content you send and confirm that you have the rights needed to send it."]},
+ {h:"5. Reports, moderation and enforcement",p:["Because chats are encrypted, we cannot review them ourselves. If you report someone, you may choose to include up to 10 recent message excerpts. Those excerpts are sent to us in readable form so that our moderators can review the report. The person you report is not told who reported them.","We may warn, restrict, suspend or remove accounts that break these Terms, harm others, or create legal or security risk. Where we can, we will tell you why. If you think we made a mistake, write to "+HELP_EMAIL+" and we will take another look.","We may keep and share information with the authorities when the law requires it or when needed to protect people’s safety, as described in our Privacy Policy."]},
+ {h:"6. Calls",l:["Voice and video calls use your internet connection and their quality depends on your network. Calls are encrypted. When a direct connection is not possible, encrypted call data may pass through relay servers.","marsX is not a telephone service and cannot be used to reach emergency services (police, ambulance, fire). Use your mobile or landline phone for emergencies.","Do not record, or share a recording of, a call without the consent of everyone on it where the law requires consent."]},
+ {h:"7. Disappearing messages and view-once photos",p:["These features limit how long content stays in a chat, but they cannot guarantee that nothing is kept. A recipient may take a screenshot, photograph the screen, copy or forward content before it disappears, and a modified app or device may keep copies. Only use them with people you trust. They do not stop us from keeping a report you submit (see section 5)."]},
+ {h:"8. Notifications and permissions",p:["Notifications are delivered through your browser’s or phone’s push service and you can turn them off in Settings and in your device settings. Camera, microphone, location, photo and notification access is only used with your permission, and you can withdraw it at any time in your device settings."]},
+ {h:"9. Third-party services",p:["The Service relies on third parties, including Google Firebase, Cloudflare, GIPHY, OpenStreetMap, Microlink, content delivery networks and call relay providers. Their own terms apply to the parts they provide. We do not control and are not responsible for third-party content, such as GIFs or websites that people link to."]},
+ {h:"10. Our rights",p:["The marsX name, logo, design and software belong to us or our licensors. We give you a personal, non-exclusive, non-transferable, revocable licence to use the Service in line with these Terms. You may not copy, modify, sell or create derivative works from it. Third-party and open-source materials remain under their own licences (see Licences and credits). If you send us feedback, we may use it without obligation to you."]},
+ {h:"11. Changes to the Service",p:["We may add, change, suspend or stop features at any time, including for maintenance, security or legal reasons. We do not promise that the Service will always be available, uninterrupted or error-free. Keep your own copy of anything important."]},
+ {h:"12. Disclaimers",p:["To the fullest extent the law allows, the Service is provided “as is” and “as available”, without warranties of any kind, including merchantability, fitness for a particular purpose and non-infringement. We do not guarantee that messages will always be delivered, stored or recoverable, or that encryption cannot be defeated by things outside our control such as malware on a device, a lost or unlocked device, or content you choose to share."]},
+ {h:"13. Limits on our liability",p:["To the fullest extent the law allows, marsX and the people who run it are not liable for indirect, incidental, special, consequential or punitive damages, or for loss of data, profits or goodwill, arising from your use of the Service. Our total liability for any claim is limited to the greater of the amount you paid us (if anything) in the 12 months before the event, or USD 50.","Nothing in these Terms limits liability that cannot be limited by law, such as for fraud or for death or personal injury caused by negligence, or removes rights you have as a consumer under mandatory local law."]},
+ {h:"14. Indemnity",p:["To the extent the law allows, you agree to cover us for claims, losses and costs (including reasonable legal fees) that arise from your content, your breach of these Terms, or your breach of the law or someone else’s rights."]},
+ {h:"15. Ending your use",p:["You can stop using marsX at any time and delete your account in Settings, Accounts, Delete account. We may suspend or end your access if you break these Terms, if we are required to by law, or to protect users or the Service. Sections that by their nature should continue after the end of your use (including 4, 5, 10 and 12 to 17) will continue."]},
+ {h:"16. Governing law and disputes",p:["These Terms are governed by the laws of the country where marsX’s operator is established, without regard to conflict-of-law rules, and the courts there have exclusive jurisdiction, except that mandatory consumer law in your country may let you bring a claim in your local courts. Before starting a formal dispute, please email "+HELP_EMAIL+" so we can try to resolve it informally; we aim to reply within 30 days."]},
+ {h:"17. Changes to these Terms",p:["We may update these Terms. When a change is important, we will tell you in the app or by email before it takes effect where practical. If you keep using marsX after the new Terms start, you accept them. If you do not agree, delete your account."]},
+ {h:"18. General",p:["These Terms are the whole agreement between you and us about the Service. If a part is found unenforceable, the rest stays in force. If we do not enforce a right, that is not a waiver of it. You may not transfer your rights under these Terms without our consent; we may transfer ours as part of a merger, sale or reorganisation. We may give you notices by email or in the app."]},
+ {h:"19. Contact",p:["Questions about these Terms: "+HELP_EMAIL+" · kashishai.com"]}
+];
+
+const PRIVACY_DOC=[
+ {p:["This Privacy Policy explains what personal information marsX (“we”, “us”), operated under the Kashish AI brand, collects when you use the marsX app and website (the “Service”), how we use and protect it, and the choices and rights you have. We are the controller of the personal data described here."]},
+ {h:"1. The short version",l:["Your messages, calls, photos, voice messages, locations and polls are end-to-end encrypted. We cannot read them.","We do not sell your personal data and we do not show ads.","We keep only what is needed to run your account, deliver your messages and keep the Service safe.","You can delete your account at any time in Settings, Accounts, Delete account."]},
+ {h:"2. Information we collect",p:["Information you give us"],l:["Account details: email address and password (your password is handled by Google Firebase Authentication; we never see it in readable form), display name, about text and profile photo.","Optional details: links on your profile and a phone number, which lets friends find you if you add it.","Your settings and choices, such as privacy and notification preferences."]},
+ {p:["Messages and media"],l:["Everything you send is encrypted on your device before it leaves it. We store only the encrypted content, and only until it is delivered and deleted, cleared, expired (disappearing messages, opened view-once photos) or your account is deleted.","We also hold the technical information needed to deliver it: sender and recipient or group IDs, timestamps, the type and size of the message, and delivery and read status (read receipts are only shared if you leave them on)."]},
+ {p:["Contacts, groups and activity"],l:["The contacts you add, groups you create or join and your role in them, and the people you block.","Online status and last seen, and typing indicators (which are short-lived), as controlled in Settings, Privacy."]},
+ {p:["Devices and encryption keys"],l:["When you sign in, your device creates an encryption key pair. The private key never leaves your device. The public key is stored so other people can send you encrypted messages.","We store a list of your linked devices. When you add a new device and approve it from an existing one, wrapped (encrypted) message keys are stored so that chat history can be opened on the new device. We cannot open them."]},
+ {p:["Calls"],l:["Audio and video travel directly between devices and are encrypted. When a direct connection is not possible, encrypted data passes through relay servers, which can see IP addresses and connection details but not call content.","A call history entry (type, time, duration) is saved inside the chat in encrypted form."]},
+ {p:["Notifications"],l:["Your browser or phone gives us a push subscription, which we keep so we can alert you to new messages and calls. Notifications do not contain message text."]},
+ {p:["Reports"],l:["If you report someone we receive the IDs involved, the reason, any details you write and, only if you choose to include them, up to 10 recent message excerpts of up to 500 characters each, readable by our moderators."]},
+ {p:["Technical information"],l:["Like any online service, our providers see your IP address, browser and device type and request logs when you connect.","Your device stores preferences, pins, favourites, unread state, cached media and encryption keys. You can remove them by logging out or clearing your browser data."]},
+ {h:"3. How we use information",l:["to create your account and run the Service: deliver messages and calls, sync your devices, show your profile to others and send notifications;","to keep the Service secure and prevent spam, fraud and abuse, and to review and act on reports;","to give you support and to find and fix problems and improve the Service;","to meet our legal obligations and to protect people’s rights and safety."]},
+ {h:"4. Legal bases (EEA, UK and similar laws)",l:["Contract: to provide the Service you signed up for.","Legitimate interests: security, abuse prevention and improving the Service, balanced against your rights.","Consent: for optional things like your phone number, notifications and camera, microphone, location and photo access. You can withdraw consent at any time.","Legal obligation: where the law requires us to keep or share information."]},
+ {h:"5. Who we share information with",p:["We do not sell personal data. We share it only as follows."],l:["Other users: what you choose to show, such as your name, photo, about text, UID, links, phone number (if added) and online status, and the content you send them.","Infrastructure providers that process data for us: Google Firebase (sign-in and database), Cloudflare (push delivery) and browser or phone push services (Google, Apple, Mozilla, Microsoft).","Call connection providers: Google STUN servers and relay (TURN) services such as Metered and ExpressTurn.","GIPHY, when you search or view GIFs (your search and IP address are shared with them).","Microlink, when link previews are on (the link being previewed is sent to them). You can turn this off in Settings, Chat, Link previews.","OpenStreetMap, which provides the map pictures for shared locations (they see which map area is requested).","ipwho.is, when you sign in on a new device, to find the approximate city shown on your other device so you can check the sign-in (they see your IP address).","Resend, which delivers one-time verification codes to your email address if you choose email verification.","jsDelivr, cdnjs and Google Fonts, which deliver code, fonts and emoji art to your browser (they see your IP address).","Authorities and others when the law requires it, to answer valid legal requests, or to protect people’s safety, rights or the Service. We can only hand over data we hold, and we cannot read encrypted content.","A successor, if marsX is merged with or sold to another business, with the protections in this policy."]},
+ {h:"6. International transfers",p:["Our providers operate around the world, so your information may be processed in countries other than your own, including countries whose data-protection laws differ. Where required, we rely on safeguards such as standard contractual clauses offered by those providers."]},
+ {h:"7. How long we keep information",l:["Account and profile: until you delete your account.","Messages and media: the encrypted copy is kept until it is deleted, cleared or expires, or your account is deleted. Copies may remain briefly in backups or caches.","Reports: for as long as needed for safety and legal reasons, normally up to 12 months after the report is closed, longer if the law requires.","Provider logs: for the time set by each provider.","Data on your device: until you log out or clear your browser data."]},
+ {h:"8. Your choices and rights",p:["In the app you can edit your profile, switch read receipts and typing indicators off, block people, use disappearing messages, manage notifications, and delete your account (this removes your profile, contacts, devices and keys). Messages that other people already received stay with them.","Depending on where you live, you may have the right to access your data, correct it, delete it, restrict or object to how we use it, receive a copy, withdraw consent, and complain to your data-protection authority. To use these rights, email "+HELP_EMAIL+". We may need to confirm it is you, and we aim to reply within 30 days."]},
+ {h:"9. Security",p:["We use end-to-end encryption for your messages and calls, encrypted connections (HTTPS/TLS) and access controls on our systems. No system is perfectly secure. Keep your device locked and your password private, log out on shared devices, and remember that anyone you send something to could screenshot or copy it."]},
+ {h:"10. Children",p:["marsX is not for people under 16. If we learn that a younger child has an account, we will delete it. If you are a parent or guardian and think this has happened, email "+HELP_EMAIL+"."]},
+ {h:"11. Regional notes",l:["India: we process personal data in line with the Digital Personal Data Protection Act, 2023. You may ask for access, correction or erasure and raise a grievance with us at "+HELP_EMAIL+".","United States (including California): we do not sell personal information or share it for cross-context advertising.","EEA and UK: see section 4 for legal bases and section 8 for your rights."]},
+ {h:"12. Changes to this policy",p:["We may update this policy. When a change is important we will tell you in the app or by email. The date at the top shows when it was last changed."]},
+ {h:"13. Contact",p:["Privacy questions or requests: "+HELP_EMAIL+" · kashishai.com"]}
+];
+
+const FAQ_DOC=[
+ {h:"How do I add a friend?",p:["Tap the blue button on the Chats or Contacts screen and enter their email address, phone number or UID number."]},
+ {h:"What does end-to-end encrypted mean?",p:["Your messages and calls are locked on your phone and can only be opened by the people in the chat. Not even marsX can read them."]},
+ {h:"I forgot my password.",p:["On the login screen tap Forgot password and we will email you a reset link. If you are logged in, go to Settings, Accounts, Change password."]},
+ {h:"How do I block or report someone?",p:["Open the chat, tap the menu at the top and choose Block or Report. A report goes to our moderators and the other person is not told."]},
+ {h:"How do disappearing messages work?",p:["Open a chat menu, choose Disappearing messages and pick 24 hours, 7 days or 90 days. New messages in that chat disappear after that time for everyone. Older messages are not affected."]},
+ {h:"What is a view-once photo?",p:["In a one-to-one chat tap +, then View once photo. The other person can open it one time. After that it is deleted and cannot be opened again. They could still take a screenshot, so only send it to people you trust."]},
+ {h:"I do not get notifications.",p:["Go to Settings, Notifications and tap Enable. Also check that notifications are allowed for your browser in your phone settings. On iPhone, add marsX to your Home Screen first."]},
+ {h:"Call sound comes from the loudspeaker.",p:["Tap the Speaker button during the call to switch between earpiece and loudspeaker. Some phones and browsers do not let a website choose the earpiece, so it may stay on the loudspeaker."]},
+ {h:"How do I use marsX on another device?",p:["Sign in with the same email and password. Approve the new device from your existing one when asked, so your chat history can be opened there."]},
+ {h:"How do I delete my account?",p:["Go to Settings, Accounts, Delete account and enter your password. This cannot be undone."]},
+ {h:"I still need help.",p:["Email "+HELP_EMAIL+" and tell us what happened. We usually reply within 3 working days."]}
+];
+
+const CREDITS_DOC=[
+ {p:["marsX is made possible by these projects and services. Their licences and terms apply to their parts."]},
+ {l:["Emoji art: Microsoft Fluent Emoji (MIT licence), delivered through LobeHub’s open-source packages.","GIFs: powered by GIPHY.","Maps: © OpenStreetMap contributors (Open Database Licence), tiles by the OpenStreetMap Foundation.","QR codes: qrcode-generator (MIT licence).","Fonts: Poppins and Inter (SIL Open Font Licence) through Google Fonts.","Accounts and database: Google Firebase.","Calls: WebRTC, Google STUN, and relay servers by Metered Open Relay and ExpressTurn.","Link previews: Microlink."]}
+];
+
+function openContactSheet(){
+  modal(h('div',{class:'sheet'}, h('h2',{},'Contact us'),
+    h('p',{},'Questions, feedback, bug reports or legal requests: email us and we will get back to you, usually within 3 working days.'),
+    h('div',{style:'font:600 17px var(--head);color:var(--navy);margin:6px 0 4px'},HELP_EMAIL),
+    h('p',{style:'font-size:13px;color:var(--muted)'},'The email opens with your app version and UID already filled in. Please add what happened and what you expected.'),
+    h('button',{class:'btn',style:'margin-top:8px',onclick:()=>mailSupport('marsX support')},'Send an email'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ (navigator.clipboard?navigator.clipboard.writeText(HELP_EMAIL):Promise.reject()).then(()=>toast('Email address copied')).catch(()=>toast(HELP_EMAIL)); }},'Copy email address'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>window.open('https://kashishai.com','_blank','noopener')},'Visit kashishai.com'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Close')));
+}
 function openHelpPage(){
-  openSettingsPage('Help and about', bd=>bd.append(h('div',{class:'sec'},
-    navRow('info','About marsX','A private, end-to-end encrypted messenger', ()=>textSheet('About marsX',['marsX is a private messenger with end-to-end encrypted chats, voice and video calls.','Your messages are encrypted on your device and can only be read by the people in the chat.','Emoji art: Microsoft Fluent Emoji (MIT license).'])),
-    navRow('help','Contact us','Questions or feedback', ()=>window.open('https://kashishai.com','_blank','noopener')),
-    navRow('lock','Terms of service',null, ()=>textSheet('Terms of service',['By using marsX you agree to use it lawfully and respectfully. Do not use it to harass others, send spam, or share illegal content.','Accounts that break these rules can be reported and removed. You are responsible for activity on your account and for keeping your password safe.','The service is provided as is. We may update these terms and will keep the latest version in the app.'])),
-    navRow('shield','Privacy policy',null, ()=>textSheet('Privacy policy',['Messages and calls are end-to-end encrypted. We cannot read your messages.','We store only what is needed to run your account: your email, name, profile photo, contacts you add, and encrypted message data. You can delete your account any time from Settings, Accounts.','Notifications use your browser’s push service and contain no message text.'])),
-    h('div',{class:'item'}, svg('info'), h('span',{style:'flex:1'},'App version',h('span',{class:'sub'},'marsX '+APP_VERSION))))));
+  openSettingsPage('Help and about', bd=>bd.append(
+    h('div',{class:'sec'}, h('h3',{},'Support'),
+      navRow('help','Help centre','Answers to common questions', ()=>docSheet('Help centre',null,FAQ_DOC,true)),
+      navRow('mail','Contact us',HELP_EMAIL, openContactSheet)),
+    h('div',{class:'sec'}, h('h3',{},'About'),
+      navRow('info','About marsX','A private, end-to-end encrypted messenger', ()=>docSheet('About marsX','Version '+APP_VERSION,[
+        {p:["marsX is a private messenger for chatting and calling the people you care about. Your messages, photos, voice messages, locations and calls are end-to-end encrypted, so only the people in the chat can read or hear them."]},
+        {h:"What you can do",l:["Private chats and groups, with reactions, replies, polls, GIFs, voice messages and location sharing.","Voice and video calls.","Disappearing messages and view-once photos.","Use it on more than one device, with your approval on each new one.","Control who sees your read receipts and typing, and block or report anyone."]},
+        {h:"Who is behind it",p:["marsX is built and run under the Kashish AI brand. Visit kashishai.com to learn more about our other products, Nexor and Monté."]},
+        {h:"Get in touch",p:[HELP_EMAIL]}],true)),
+      navRow('lock','Terms of service','Last updated '+LEGAL_DATE, ()=>docSheet('Terms of service','Last updated: '+LEGAL_DATE,TERMS_DOC,true)),
+      navRow('shield','Privacy policy','Last updated '+LEGAL_DATE, ()=>docSheet('Privacy policy','Last updated: '+LEGAL_DATE,PRIVACY_DOC,true)),
+      navRow('info','Licences and credits','Open-source and third-party', ()=>docSheet('Licences and credits',null,CREDITS_DOC,false))),
+    h('div',{class:'sec'},
+      h('div',{class:'item'}, svg('info'), h('span',{style:'flex:1'},'App version',h('span',{class:'sub'},'marsX '+APP_VERSION))),
+      h('div',{style:'font-size:12.5px;line-height:1.6;color:var(--muted);padding:6px 4px'},'© 2026 marsX · Kashish AI. All rights reserved.'))));
 }
 
 /* change password / delete account */
@@ -2396,7 +2717,7 @@ function renderSettings(body){
     h('div',{class:'sec'},
       h('button',{class:'item',onclick:()=>openSetup(true)}, svg('edit'), h('span',{}, 'Edit profile', h('span',{class:'sub'},'Name, photo, about, links, phone number'))),
       h('button',{class:'item',onclick:()=>openWallpaper(null)}, svg('image'), h('span',{}, 'Chat wallpaper', h('span',{class:'sub'},'Background for all chats'))),
-      h('button',{class:'item',onclick:openAddContact}, svg('user2'), h('span',{}, 'Add a friend', h('span',{class:'sub'},'By email, phone number or UID'))),
+      h('button',{class:'item',onclick:openAddContact}, svg('user2'), h('span',{}, 'New contact', h('span',{class:'sub'},'By email, phone number or UID'))),
       h('button',{class:'item',onclick:scanOpen}, svg('qr'), h('span',{}, 'Link a device', h('span',{class:'sub'},'Scan the QR code shown on your laptop')))),
     h('div',{class:'sec'}, h('h3',{},'Chat'), prefRow('Link previews','Fetch a title and image for links you send (the link is looked up via microlink.io).','lp'), prefRow('Message effects','Animated emojis, bubble & screen effects.','fx')),
     h('div',{class:'sec'}, h('h3',{},'Linked devices'), h('div',{id:'devList'}, h('div',{class:'empty',style:'padding:10px'},'Loading…'))),
@@ -2407,8 +2728,8 @@ function renderSettings(body){
   R('devices/'+me.uid).once('value').then(s=>{
     const box=$('#devList'); if(!box) return; box.innerHTML=''; const v=s.val()||{};
     Object.entries(v).sort((a,b)=>(a[1].ts||0)-(b[1].ts||0)).forEach(([id,d])=>{
-      box.append(h('div',{class:'item'}, svg('device'), h('span',{style:'flex:1'}, d.label||'Device', h('span',{class:'sub'}, id===dev.id?'This device':'Linked '+new Date(d.ts||0).toLocaleDateString())),
-        id===dev.id?null:h('button',{class:'link',style:'margin-right:8px',onclick:async()=>{ hsSet('ok',id); toast('Syncing history…'); await syncHistory(); toast('History sent'); }},'Send history'),
+      box.append(h('div',{class:'item'}, svg('device'), h('span',{style:'flex:1'}, d.label||'Device', h('span',{class:'sub'}, id===dev.id?'This device':(d.ok===false?'Waiting for approval':'Linked '+new Date(d.ts||0).toLocaleDateString()))),
+        (id===dev.id||d.ok===false)?null:h('button',{class:'link',style:'margin-right:8px',onclick:async()=>{ hsSet('ok',id); toast('Syncing history…'); await syncHistory(); toast('History sent'); }},'Send history'),
         id===dev.id?null:h('button',{class:'icon-btn',title:'Remove',onclick:async()=>{ if(confirm('Remove this device? It will stop receiving new messages.')){ await R(`devices/${me.uid}/${id}`).remove(); renderList(); } }}, svg('trash'))));
     });
   });
@@ -2417,13 +2738,46 @@ function renderSettings(body){
 /* ---------------- add contact ---------------- */
 function modal(content){ const m=h('div',{class:'modal',onclick:e=>{ if(e.target===m) closeModal(); }}, content); $('#modalRoot').append(m); return m; }
 function closeModal(){ $('#modalRoot').innerHTML=''; }
+/* ---------- contact names (saved-as): your own name for a contact, only you see it ---------- */
+let aliasMap={};
+const dispName=(uid,pname)=>((aliasMap[uid]||'').trim()||pname);
+function applyAliases(){ let ch=false; Object.values(contacts).forEach(c=>{ if(c.isGroup||c.pname==null) return; const n=dispName(c.uid,c.pname); if(n!==c.name){ c.name=n; ch=true; } }); if(ch){ try{ renderAll(); }catch(_){} } }
+function loadAliases(){
+  aliasMap=LSJ.get('alias:'+me.uid,{})||{};
+  const r=R('private/'+me.uid+'/alias'), f=r.on('value',s=>{ const v=s.val(); if(v&&typeof v==='object'){ aliasMap=v; LSJ.set('alias:'+me.uid,aliasMap); } applyAliases(); },()=>{});
+  watchers.push(()=>r.off('value',f));
+}
+function setAlias(uid,name,quiet){
+  const c=contacts[uid], pn=c&&c.pname!=null?c.pname:'';
+  name=String(name||'').trim().replace(/\s+/g,' ').slice(0,60);
+  if(!name||name===pn){ delete aliasMap[uid]; R('private/'+me.uid+'/alias/'+uid).remove().catch(()=>{}); }
+  else{ aliasMap[uid]=name; R('private/'+me.uid+'/alias/'+uid).set(name).catch(()=>{}); }
+  LSJ.set('alias:'+me.uid,aliasMap);
+  if(c){ c.name=dispName(uid,pn||c.name); }
+  if(!quiet){ try{ renderAll(); }catch(_){} toast(aliasMap[uid]?'Name saved':'Name reset'); }
+}
+const nameInp=(ph,val)=>h('input',{placeholder:ph,value:val||'',maxlength:40,autocomplete:'off',style:'width:100%;height:54px;border-radius:27px;border:2px solid transparent;background:var(--soft);padding:0 22px;outline:none;font-size:16px;color:var(--navy);margin-bottom:10px'});
+const splitName=n=>{ const p=String(n||'').trim().split(/\s+/); return [p[0]||'',p.slice(1).join(' ')]; };
+function openRenameContact(uid){
+  const c=contacts[uid]; if(!c||c.isGroup) return;
+  const [f0,l0]=splitName(c.name), fn=nameInp('First name',f0), ln=nameInp('Last name (optional)',l0);
+  const save=()=>{ const v=(fn.value+' '+ln.value).trim(); if(!v) return toast('Enter a name'); closeModal(); setAlias(uid,v); };
+  [fn,ln].forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') save(); }));
+  modal(h('div',{class:'sheet'}, h('h2',{},'Edit contact name'),
+    h('p',{},'Only you can see this name. Their profile name is '+(c.pname||c.name)+'.'), fn, ln,
+    h('button',{class:'btn',onclick:save},'Save'),
+    (aliasMap[uid]?h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ closeModal(); setAlias(uid,''); }},'Use profile name'):null),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Cancel')));
+  setTimeout(()=>fn.focus({preventScroll:true}),50);
+}
+
 function openAddContact(){
   const inp = h('input',{placeholder:'Email, phone number or UID number',autofocus:true,style:'width:100%;height:54px;border-radius:27px;border:2px solid transparent;background:var(--soft);padding:0 22px;outline:none;font-size:16px;color:var(--navy)'});
   const res = h('div',{}), err = h('div',{class:'err'});
   const go = h('button',{class:'btn'},'Find');
   let foundUser=null;
   async function find(){
-    err.textContent=''; res.innerHTML=''; foundUser=null; const v=inp.value.trim(); if(!v) return;
+    err.textContent=''; res.innerHTML=''; foundUser=null; go.style.display=''; const v=inp.value.trim(); if(!v) return;
     go.disabled=true;
     try{
       let uid=null;
@@ -2438,15 +2792,29 @@ function openAddContact(){
       else if(contacts[uid]){ err.textContent=contacts[uid].name+' is already in your contacts.'; }
       else{
         const u=(await R('users/'+uid).once('value')).val(); if(!u) throw new Error('User has no profile yet.');
-        foundUser={uid,...u};
+        foundUser={uid,...u}; go.style.display='none';
+        const [f0,l0]=splitName(u.name), fn=nameInp('First name',f0), ln=nameInp('Last name (optional)',l0);
+        const doAdd=async()=>{
+          const nm=(fn.value+' '+ln.value).trim(); if(!nm) return toast('Enter a name');
+          addB.disabled=true;
+          try{
+            await R('').update({[`contacts/${me.uid}/${uid}`]:true,[`contacts/${uid}/${me.uid}`]:true});
+            foundUser.pname=u.name; contacts[uid]=foundUser; setAlias(uid,nm,true); foundUser.name=dispName(uid,u.name);
+            threads[uid]=threads[uid]||{items:[],last:null,unread:0,chain:Promise.resolve()};
+            closeModal(); toast(foundUser.name+' added'); setTab('chats'); openChat(uid);
+          }catch(e){ addB.disabled=false; err.textContent=e.message||'Could not add contact'; }
+        };
+        const addB=h('button',{class:'btn',onclick:doAdd},'Add contact');
+        [fn,ln].forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') doAdd(); }));
         res.append(h('div',{class:'found'}, avatar(foundUser,56), h('div',{}, h('div',{class:'n'},u.name), h('div',{class:'u'},'UID '+u.uidNum))),
-          h('button',{class:'btn',onclick:async()=>{ await R('').update({[`contacts/${me.uid}/${uid}`]:true,[`contacts/${uid}/${me.uid}`]:true}); contacts[uid]=foundUser; threads[uid]=threads[uid]||{items:[],last:null,unread:0,chain:Promise.resolve()}; closeModal(); toast(u.name+' added'); setTab('chats'); openChat(uid); }},'Add & chat'));
+          h('div',{style:'font-size:12.5px;color:var(--muted);margin:12px 6px 8px;text-align:left'},'Save as. You can change the name, only you will see it.'),
+          fn, ln, addB);
       }
     }catch(e){ err.textContent=e.message||String(e); }
     go.disabled=false;
   }
   go.onclick=find; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') find(); });
-  modal(h('div',{class:'sheet'}, h('h2',{},'Add a friend'), h('p',{},'Find someone with their email address, phone number or the unique UID number shown in their Settings.'),
+  modal(h('div',{class:'sheet'}, h('h2',{},'New contact'), h('p',{},'Find someone with their email address, phone number or the unique UID number shown in their Settings, then save them with the name you like.'),
     inp, err, res, go, h('button',{class:'btn ghost',onclick:closeModal,style:'margin-top:10px'},'Close')));
   setTimeout(()=>inp.focus({preventScroll:true}),50);
 }
@@ -3058,6 +3426,8 @@ async function checkNewDevices(){
   if(!me||!dev||document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call)) return;
   let v; try{ v=(await R('devices/'+me.uid).once('value')).val()||{}; }catch(_){ return; }
   for(const [id,d] of Object.entries(v)){
+    if(d.ok===false) continue;
+    if(devPreOk.has(id)&&!hsFlag('ok',id)){ hsSet('ok',id); syncHistory(); continue; }
     if(id===dev.id||hsFlag('ok',id)||hsFlag('no',id)||hsSnoozed(id)||hsAsked.has(id)) continue;
     if(!hsNeeds(id)) continue;
     hsAsked.add(id); hsSnooze(id);   // snooze immediately: even if dismissed by tapping outside, it won't come back
@@ -3070,9 +3440,25 @@ async function checkNewDevices(){
     return;
   }
 }
+async function checkDeviceAlert(){
+  if(!me||!dev||document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call)) return;
+  let v; try{ v=(await R('devices/'+me.uid).once('value')).val()||{}; }catch(_){ return; }
+  const key='kd:'+me.uid, known=LSJ.get(key,null), ids=Object.keys(v).filter(id=>v[id].ok!==false);
+  if(!known){ LSJ.set(key,ids); return; }                       // first run on this device: remember what exists
+  const fresh=ids.filter(id=>id!==dev.id&&!known.includes(id));
+  LSJ.set(key,[...new Set([...known,...ids])]);
+  if(!fresh.length||!PREF.get('sn')) return;
+  const d=v[fresh[0]]||{};
+  modal(h('div',{class:'sheet'}, h('h2',{},'New device signed in'),
+    h('p',{},'“'+(d.label||'A new device')+'” just signed in to your account. If this was you, no action is needed.'),
+    h('p',{style:'color:var(--danger)'},'If it was not you, remove the device and change your password right away.'),
+    h('button',{class:'btn',onclick:()=>{ closeModal(); setTab('settings'); }},'Review linked devices'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ closeModal(); openChangePassword(); }},'Change password'),
+    h('button',{class:'btn line',style:'margin-top:10px',onclick:closeModal},'It was me')));
+}
 function scheduleDevCheck(){
   clearTimeout(hsTimer);
-  hsTimer=setTimeout(()=>{ syncHistory(); checkNewDevices(); },6000);
+  hsTimer=setTimeout(async()=>{ syncHistory(); try{ await checkDeviceAlert(); }catch(_){} checkNewDevices(); },6000);
 }
 
 let lastDayShown = '';
@@ -3315,6 +3701,7 @@ function openChatActions(uid){
     h('button',{class:'item',onclick:()=>{ closeModal(); openGroupInfo(uid); }}, svg('users'), 'Group info'),
     h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, h('span',{style:'font-size:20px'},'📌'), isPinned(uid)?'Unpin chat':'Pin chat'),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, h('span',{style:'font-size:20px'},'🗄️'), isArchived(uid)?'Unarchive chat':'Archive chat'),
+    h('button',{class:'item',onclick:()=>{ closeModal(); toggleFav(uid); }}, h('span',{style:'font-size:20px'},'⭐'), isFav(uid)?'Remove from favourites':'Add to favourites'),
     h('button',{class:'item',onclick:()=>{ closeModal(); openWallpaper(uid); }}, svg('image'), 'Chat wallpaper'),
     h('button',{class:'item',onclick:()=>{ closeModal(); openDisappearing(uid); }}, svg('clock'), h('span',{}, 'Disappearing messages', h('span',{class:'sub'}, dmLabel(uid)))),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleChatMute(uid); }}, svg('bell'), isMuted(uid)?'Unmute notifications':'Mute notifications'),
@@ -3325,6 +3712,7 @@ function openChatActions(uid){
     h('button',{class:'item',onclick:()=>{ closeModal(); openContactInfo(uid); }}, svg('user'), 'View profile'),
     h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, h('span',{style:'font-size:20px'},'📌'), isPinned(uid)?'Unpin chat':'Pin chat'),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, h('span',{style:'font-size:20px'},'🗄️'), isArchived(uid)?'Unarchive chat':'Archive chat'),
+    h('button',{class:'item',onclick:()=>{ closeModal(); toggleFav(uid); }}, h('span',{style:'font-size:20px'},'⭐'), isFav(uid)?'Remove from favourites':'Add to favourites'),
     h('button',{class:'item',onclick:()=>{ closeModal(); openWallpaper(uid); }}, svg('image'), 'Chat wallpaper'),
     h('button',{class:'item',onclick:()=>{ closeModal(); openDisappearing(uid); }}, svg('clock'), h('span',{}, 'Disappearing messages', h('span',{class:'sub'}, dmLabel(uid)))),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleChatMute(uid); }}, svg('bell'), isMuted(uid)?'Unmute notifications':'Mute notifications'),
