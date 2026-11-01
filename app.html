@@ -1243,7 +1243,7 @@ function avatar(p, size, online){
   if(p && p.photo) a.append(h('img',{src:p.photo,alt:''}));
   else a.append((p&&p.name||'?').trim().slice(0,1).toUpperCase());
   if(online) a.append(h('span',{class:'dot'}));
-  const cc=p&&CC[p.uid]; if(cc && /^[A-Za-z]{2}$/.test(cc) && !p.ccHide && size>=30){ const f=h('img',{class:'flag',alt:cc,src:'https://flagcdn.com/w40/'+cc.toLowerCase()+'.png'}); f.onerror=()=>f.remove(); a.append(f); }
+  const cc=p&&CC[p.uid]; if(cc && /^[A-Za-z]{2}$/.test(cc) && !p.ccHide && size>=30){ const f=h('img',{class:'flag',alt:cc,src:'https://flagcdn.com/'+cc.toLowerCase()+'.svg'}); f.onerror=()=>f.remove(); a.append(f); }
   return a;
 }
 function relTime(ts){
