@@ -58,6 +58,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script>(function(){var u=navigator.userAgent||'',c=document.documentElement.classList;if(/iPhone|iPad|iPod/.test(u)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))c.add('p-ios');else if(/Android/i.test(u))c.add('p-android');})();</script>
 <style>
 :root{
   --bg:#E6EEFA; --card:#fff; --navy:#2D2A5E; --ink:#3A3860; --muted:#8C90A8; --soft:#F3F4FC;
@@ -714,6 +715,30 @@ svg.ei{width:1.05em;height:1.05em;vertical-align:-.17em;margin-right:2px;display
 .chead .nm .vbadge{width:19px;height:19px;vertical-align:-4px}
 .ci-hero h2 .vbadge{width:24px;height:24px;vertical-align:-5px}
 .row .name .vbadge{width:17px;height:17px;vertical-align:-3px}
+
+/* ---- platform look: iPhone = grouped inset lists, Android = Material You ---- */
+html.p-ios :is(.setv,.spb) .sec{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:24px}
+html.p-ios :is(.setv,.spb) .sec h3{padding:12px 16px 2px;margin:0;font-size:12px}
+html.p-ios :is(.setv,.spb) .item{padding:12px 16px;border-bottom:0;position:relative;min-height:52px}
+html.p-ios :is(.setv,.spb) .item:not(:last-child)::after{content:"";position:absolute;left:16px;right:0;bottom:0;height:1px;background:var(--line)}
+html.p-ios :is(.setv,.spb) .item svg:not(.chev){color:var(--blue)}
+html.p-ios :is(.setv,.spb) .item:active{background:var(--soft)}
+html.p-ios .uidbox{border-radius:14px}
+html.p-ios .sph{justify-content:flex-start;min-height:48px;border-bottom:1px solid var(--line)}
+html.p-ios .sph h2{position:absolute;left:56px;right:56px;text-align:center;font:600 17px var(--head);pointer-events:none}
+html.p-ios .spage{background:var(--bg)}
+html.p-android :is(.setv,.spb) .sec{margin-bottom:12px}
+html.p-android :is(.setv,.spb) .sec h3{color:var(--blue);text-transform:none;letter-spacing:.1px;font:500 14px var(--head);margin:6px 8px 4px}
+html.p-android :is(.setv,.spb) .item{border-bottom:0;border-radius:18px;padding:14px 12px;transition:background .15s}
+html.p-android :is(.setv,.spb) .item:active{background:var(--soft)}
+html.p-android :is(.setv,.spb) .item .chev{display:none}
+html.p-android .uidbox{border-radius:28px}
+html.p-android .sph h2{font:500 22px var(--head)}
+html.p-android :is(.setv,.spb) .sw{width:52px;height:32px}
+html.p-android :is(.setv,.spb) .sw span{background:var(--soft);border:2px solid var(--muted);border-radius:16px}
+html.p-android :is(.setv,.spb) .sw span::after{top:6px;left:6px;width:16px;height:16px;background:var(--muted);box-shadow:none}
+html.p-android :is(.setv,.spb) .sw input:checked+span{background:var(--blue);border-color:var(--blue)}
+html.p-android :is(.setv,.spb) .sw input:checked+span::after{top:2px;left:2px;width:24px;height:24px;background:#fff;transform:translateX(20px)}
 </style>
 </head>
 <body>
@@ -1066,6 +1091,7 @@ try{
 const R = p => db.ref(P+p);
 const TS = firebase.database.ServerValue.TIMESTAMP;
 
+let bootP=null,bootSnap=null,appReady=false,pendingOpen=null,snapT=null;   // instant-start cache
 let me = null;           // firebase user
 let myProf = null;       // my profile
 let dev = null;          // this device {id, priv, pub}
@@ -1328,9 +1354,11 @@ function firstTimeGate(user){
 }
 async function onUser(user){
   if(otpBusy && user) return;   // wait until the password is attached
+  try{ await bootP; }catch(_){}
   stopApp();
   me = user;
-  if(!user){ myProf=null; show('authStage'); return; }
+  if(!user){ bootSnap=null; try{ idbSet('snap:last',null).catch(()=>{}); }catch(_){} myProf=null; show('authStage'); return; }
+  if(bootSnap){ if(bootSnap.uid===user.uid) seedGhosts(bootSnap); else { bootSnap=null; show('authStage'); } }
   try{
     dev = await loadOrCreateDevice(user.uid);
     const snap = await R('users/'+user.uid).once('value');
@@ -1371,9 +1399,12 @@ async function startApp(){
   watchers.push(()=>ug.off('value',ugf));
   initKai(); initMonte();
   setTab('chats'); renderChat();
+  appReady=true; snapSoon(); setTimeout(clearGhostLasts,8000);
+  if(pendingOpen&&contacts[pendingOpen]){ const pu=pendingOpen; pendingOpen=null; openChat(pu); } else pendingOpen=null;
   setupPush();
 }
 function stopApp(){
+  appReady=false; clearTimeout(snapT);
   try{ if(call) endCall(false,'abort'); stopIncoming(); }catch(_){}
   histMap={}; hsAsked=new Set(); clearTimeout(hsTimer); clearTimeout(hrT);
   Object.values(contactWatch).forEach(f=>f()); Object.values(groupWatch).forEach(f=>f()); groupWatch={}; profiles={}; ciOpen=null;
@@ -1398,6 +1429,7 @@ function syncContacts(uids){
     contactWatch[uid] = () => { pr.off('value',pf); pp.off('value',ppf); dr.off('value',df); delete devCache[uid]; delete devOk[uid]; mr.off('child_added',mf); delete contactWatch[uid]; };
   });
   Object.keys(contactWatch).forEach(u=>{ if(!uids.includes(u)){ contactWatch[u](); delete contacts[u]; delete threads[u]; if(openUid===u) closeChat(); } });
+  Object.keys(contacts).forEach(u=>{ const c=contacts[u]; if(c&&c.ghost&&!c.isGroup&&!c.bot&&!uids.includes(u)){ delete contacts[u]; delete threads[u]; if(openUid===u) closeChat(); } });
   renderAll();
 }
 
@@ -1469,8 +1501,10 @@ async function onMsg(uid, key, rec){
   { const pv=t.voPend&&t.voPend.get(key); if(pv && pv.from!==rec.from) voDone(uid,item,pv.p); }
   if(rec.from!==me.uid) markDelivered(uid);
   t.last = t.items[t.items.length-1];
+  if(t.ghostLast){ if(t.ghostLast.ts>t.last.ts) t.last=t.ghostLast; else t.ghostLast=null; }
   const lr = getLR(uid);
   t.unread = t.items.filter(i=>i.from!==me.uid && i.ts>lr).length;
+  if(t.ghostLast) t.unread=Math.max(t.unread,t.ghostUnread||0);
   if(openUid===uid){
     if(document.visibilityState==='visible'){ setLR(uid, Math.max(Date.now(), item.ts)); t.unread=0; }
     appendMsg(item);
@@ -1480,6 +1514,7 @@ async function onMsg(uid, key, rec){
   renderList();
 }
 function previewOf(it,key){
+  if(it&&it.gpv!=null) return it.gpv;
   if(!it) return key&&isGroup(key) ? 'New group' : 'Say hello 👋';
   if(!PREF.get('npv') && !it.locked && !it.unsent && !(it.p&&it.p.t==='calllog')) return (it.from===me.uid?'You: ':'')+'Message';
   if(it.locked) return '🔒 Encrypted message';
@@ -1562,6 +1597,13 @@ function pushNotify(uid,payload){
   }catch(_){}
 }
 /* ---------------- preferences, groups, receipts, polls ---------------- */
+const _UA=navigator.userAgent||'';
+const PLAT=(/iPhone|iPad|iPod/.test(_UA)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))?'ios':/Android/i.test(_UA)?'android':'other';
+const isStandalone=()=>{ try{ return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true; }catch(_){ return false; } };
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; });
+window.addEventListener('appinstalled',()=>{ deferredInstall=null; });
+function buzz(p){ try{ if(PLAT==='android'&&navigator.vibrate&&PREF.get('vib')) navigator.vibrate(p); }catch(_){} }
 const PREF={ get(k){ const v=localStorage.getItem('pref:'+k); return v===null?true:v==='1'; }, set(k,v){ try{ localStorage.setItem('pref:'+k,v?'1':'0'); }catch(_){} } };
 const isGroup = k => typeof k==='string' && k.startsWith('grp_');
 const chatCid = k => isGroup(k) ? k : cidOf(me.uid,k);
@@ -1630,6 +1672,7 @@ function syncGroups(gids){
     groupWatch[gid]=()=>{ gr.off('value',gf); mr.off('child_added',mf); delete groupWatch[gid]; };
   });
   Object.keys(groupWatch).forEach(g=>{ if(!gids.includes(g)) dropGroup(g,true); });
+  Object.keys(contacts).forEach(u=>{ const c=contacts[u]; if(c&&c.ghost&&c.isGroup&&!gids.includes(u)){ delete contacts[u]; delete threads[u]; if(openUid===u) closeChat(); } });
 }
 const sysMsg=(gid,text)=>sendPayload(gid,{t:'sys',text});
 function memberPicker(people,sel){
@@ -2033,7 +2076,7 @@ function playTone(kind){
     else { tnote(a,master,440,t,1,.3); tnote(a,master,480,t,1,.3); }
   };
   cycle(); const iv=setInterval(cycle,kind==='ring'?3700:4000);
-  let vib=null; if(kind==='ring'&&navigator.vibrate){ const v=()=>{ try{ navigator.vibrate([500,250,500]); }catch(_){} }; v(); vib=setInterval(v,2000); }
+  let vib=null; if(kind==='ring'&&navigator.vibrate&&PLAT==='android'&&PREF.get('vib')){ const v=()=>{ try{ navigator.vibrate([500,250,500]); }catch(_){} }; v(); vib=setInterval(v,2000); }
   tone={master,iv,vib,a};
 }
 function stopTone(){
@@ -2504,6 +2547,7 @@ async function initMonte(){
     if(openUid===MONTE_UID) renderChat(); renderList(); },()=>{});
   watchers.push(()=>{ try{ q.off('child_added',addf); q.off('child_removed',remf); }catch(_){} });
   if(has) show();
+  else if(contacts[MONTE_UID]&&contacts[MONTE_UID].ghost){ delete contacts[MONTE_UID]; delete threads[MONTE_UID]; renderList(); }
 }
 
 /* ---------------- list rendering ---------------- */
@@ -2613,7 +2657,7 @@ function renderList(){
             h('div',{class:'txt'}, tab==='chats' ? emo(isBlocked(c.uid) ? '🚫 Blocked' : previewOf(last,c.uid)) : ((c.about&&c.about!=='null'&&c.about!=='undefined') ? c.about : 'UID '+c.uidNum)),
             tab==='chats' && t.unread ? h('div',{class:'badge'}, t.unread>99?'99+':t.unread) : null)));
       if(tab==='chats'||tab==='contacts'){
-        row.addEventListener('touchstart',()=>{ lpDone=false; lpT=setTimeout(()=>{ lpDone=true; try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} openListActions(c.uid); },520); },{passive:true});
+        row.addEventListener('touchstart',()=>{ lpDone=false; lpT=setTimeout(()=>{ lpDone=true; buzz(12); openListActions(c.uid); },520); },{passive:true});
         ['touchend','touchmove','touchcancel'].forEach(ev=>row.addEventListener(ev,()=>clearTimeout(lpT),{passive:true}));
       }
       body.append(row);
@@ -2630,7 +2674,9 @@ function renderList(){
           h('div',{class:'prev'},h('div',{class:'txt'},svg(out?'arrUR':'arrDL','ei'),' '+callLogText(i).replace(/^\S+\s/,''))))));
     });
   } else { renderSettings(body); }
+  body.classList.toggle('setv', tab!=='chats'&&tab!=='contacts'&&tab!=='calls');
   body.scrollTop = top;
+  snapSoon();
 }
 $('#searchBtn').onclick = () => { const b=$('#sbar'); b.classList.toggle('on'); if(b.classList.contains('on')) $('#sIn').focus(); else { $('#sIn').value=''; renderList(); } };
 $('#sIn').oninput = renderList;
@@ -2823,6 +2869,44 @@ function voModeSheet(file){
 const APP_VERSION='1.0.0';
 const isMuted=uid=>{ try{ return localStorage.getItem('mute:'+chatCid(uid))==='1'; }catch(_){ return false; } };
 function toggleChatMute(uid){ const on=!isMuted(uid); try{ localStorage.setItem('mute:'+chatCid(uid),on?'1':'0'); }catch(_){} toast(on?'Notifications muted for this chat':'Notifications unmuted'); }
+
+function openPlatformPage(){
+  openSettingsPage(PLAT==='ios'?'iPhone settings':PLAT==='android'?'Android settings':'This device', bd=>{
+    const note=t=>h('div',{class:'sec'},h('div',{class:'sub',style:'color:var(--muted);font-size:13px;line-height:1.5;padding:4px 16px'},t));
+    const inst=isStandalone();
+    if(PLAT==='android'){
+      const stRow=h('span',{class:'sub'},inst?'Installed. Opening from your home screen.':deferredInstall?'Install marsX as an app on this phone.':'Chrome menu (⋮) → Install app / Add to Home screen.');
+      bd.append(
+        h('div',{class:'sec'},h('h3',{},'App'),
+          h('button',{class:'item',onclick:async()=>{
+            if(inst){ toast('Already installed'); return; }
+            if(deferredInstall){ try{ deferredInstall.prompt(); await deferredInstall.userChoice; }catch(_){} deferredInstall=null; }
+            else toast('Open the Chrome menu (⋮) and tap Install app');
+          }}, svg('device'), h('span',{style:'flex:1'},'Install marsX',stRow), inst?null:svg('chev','chev'))),
+        h('div',{class:'sec'},h('h3',{},'Touch feedback'),
+          prefRow('Vibration','Vibrate for incoming calls, long-press and swipe-to-reply.','vib',v=>{ if(v) buzz(15); })),
+        h('div',{class:'sec'},h('h3',{},'Reliable notifications'),
+          navRow('bell','Notification style','Sound, pop-up and lock-screen on Android',()=>textSheet('Notification style',['Open Android Settings → Apps → marsX → Notifications.','There you can choose the sound, turn on pop-up (heads-up) alerts and show messages on the lock screen.'])),
+          navRow('clock','Battery','Stop Android from delaying messages',()=>textSheet('Battery',['Open Android Settings → Apps → marsX → Battery and choose Unrestricted (or “Don’t optimise”).','Otherwise some phones delay notifications while the app is closed.']))));
+    } else if(PLAT==='ios'){
+      bd.append(
+        h('div',{class:'sec'},h('h3',{},'App'),
+          h('button',{class:'item',onclick:()=>{ if(inst) toast('Already on your Home Screen'); else textSheet('Add to Home Screen',['1. Open marsX in Safari.','2. Tap the Share button (square with an arrow).','3. Choose Add to Home Screen, then Add.','4. Open marsX from the new Home Screen icon.']); }},
+            svg('device'), h('span',{style:'flex:1'},'Add to Home Screen',h('span',{class:'sub'},inst?'Done. You are using the Home Screen app.':'Needed for notifications and full-screen mode on iPhone.')), inst?null:svg('chev','chev'))),
+        h('div',{class:'sec'},h('h3',{},'Notifications'),
+          navRow('bell','Push notifications',inst?(('Notification' in window)?(Notification.permission==='granted'?'On for this iPhone':'Tap to enable'):'Update to iOS 16.4 or newer'):'Add to Home Screen first',()=>{ if(!inst) return toast('Add marsX to your Home Screen first'); openNotifPage(); }),
+          navRow('info','If alerts are missing','Check iPhone Settings',()=>textSheet('iPhone notifications',['Open iPhone Settings → Notifications → marsX and make sure Allow Notifications is on.','Also check that Focus or Do Not Disturb is not silencing marsX.']))),
+        h('div',{class:'sec'},h('h3',{},'Audio'),
+          navRow('globe','Speaker for calls','Switch from Control Centre',()=>textSheet('Call speaker',['Safari can’t switch the speaker by itself. During a call, open Control Centre and use the audio output button to choose Speaker or AirPods.']))),
+        note('Vibration is not available to web apps on iPhone, so that option is hidden here.'));
+    } else {
+      bd.append(
+        h('div',{class:'sec'},h('h3',{},'Install'),
+          navRow('device','Install marsX',deferredInstall?'Install as a desktop app':'Use the install icon in the address bar',async()=>{ if(deferredInstall){ try{ deferredInstall.prompt(); await deferredInstall.userChoice; }catch(_){} deferredInstall=null; } else toast('Use the install icon in your browser address bar'); }),
+          navRow('bell','Notifications','Allow browser notifications',openNotifPage)));
+    }
+  });
+}
 
 function openNotifPage(){
   openSettingsPage('Notifications', bd=>{
@@ -3214,6 +3298,7 @@ function renderSettings(body){
       navRow('user','Accounts','Security notifications, email, two-step verification',openAccountsPage),
       navRow('lock','Privacy','Read receipts, typing, blocked contacts',openPrivacyPage),
       navRow('bell','Notifications','Sounds, previews, calls',openNotifPage),
+      navRow('device',PLAT==='ios'?'iPhone settings':PLAT==='android'?'Android settings':'This device',PLAT==='ios'?'Home Screen, notifications, audio':PLAT==='android'?'Install app, vibration, battery':'Install and notification tips',openPlatformPage),
       navRow('db','Storage and data','Storage used, clear cache',openStoragePage),
       navRow('share','Invite a friend','Share marsX with friends',inviteFriend),
       navRow('help','Help and about','Version, terms, privacy, contact',openHelpPage)),
@@ -3326,6 +3411,7 @@ function openAddContact(){
 /* ---------------- chat view ---------------- */
 function closeChat(){ openUid=null; document.body.classList.remove('chat-open'); renderChat(); renderList(); }
 function openChat(uid){
+  if(!appReady){ pendingOpen=uid; toast('Connecting…'); return; }
   openUid=uid; document.body.classList.add('chat-open');
   const t=threads[uid]; if(t){ t.unread=0; setLR(uid, Date.now()); }
   renderChat(); renderList();
@@ -3784,7 +3870,7 @@ function openForward(srcUid,it){
 function closeMsgMenu(){ const m=document.querySelector('.mo:not(.out)'); if(!m) return; m.classList.add('out'); setTimeout(()=>m.remove(),150); }
 function openMsgMenu(uid,it,el){
   if(document.querySelector('.mo')||it.locked) return;
-  if(navigator.vibrate) try{ navigator.vibrate(12); }catch(_){}
+  buzz(12);
   const mine=it.from===me.uid, p=it.p, opened=Date.now();
   const r=el.getBoundingClientRect();
   const cl=el.cloneNode(true); cl.removeAttribute('data-k'); cl.querySelector('.rx')?.remove(); cl.querySelector('.rcpt')?.remove(); cl.style.transform=''; cl.style.width=r.width+'px';
@@ -3831,7 +3917,7 @@ function bindMsgGestures(el,it,uid){
   },{passive:false});
   const end=()=>{
     cancel();
-    if(mode==='swipe'){ el.classList.add('swback'); el.style.transform=''; arrow.style.opacity=0; if(dx>=56){ if(navigator.vibrate) try{ navigator.vibrate(8); }catch(_){} const c=cur(); if(!c.unsent) setReply(uid,c); } setTimeout(()=>el.classList.remove('swback'),220); }
+    if(mode==='swipe'){ el.classList.add('swback'); el.style.transform=''; arrow.style.opacity=0; if(dx>=56){ buzz(8); const c=cur(); if(!c.unsent) setReply(uid,c); } setTimeout(()=>el.classList.remove('swback'),220); }
     mode=null; dx=0;
   };
   el.addEventListener('touchend',end); el.addEventListener('touchcancel',end);
@@ -4402,6 +4488,53 @@ function openModPanel(){
 
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&openUid&&threads[openUid]){ threads[openUid].unread=0; setLR(openUid,Date.now()); renderList(); markRead(openUid); } });
 if(!firebaseConfig.apiKey) document.body.textContent='Missing Firebase config';
+/* ---------------- instant start: show last known chat list before Firebase answers ---------------- */
+function seedGhosts(sn){
+  (sn.contacts||[]).forEach(g=>{
+    if(!g||!g.uid||contacts[g.uid]) return;
+    const c={uid:g.uid,name:g.name||'Chat',pname:g.pname,photo:g.photo||null,uidNum:g.uidNum||'',about:g.about||'',isGroup:!!g.isGroup,verified:!!g.verified,bot:!!g.bot,members:g.members||{},ghost:true};
+    if(g.links) c.links=g.links;
+    if(g.uid===KAI_UID){ c.photo=KAI_LOGO; c.verified=true; c.bot=true; }
+    if(g.uid===MONTE_UID){ c.photo=MONTE_LOGO; c.verified=true; c.bot=true; }
+    contacts[g.uid]=c;
+    const last=g.lts?{ts:g.lts,from:'ghost',gpv:g.pv||'',p:null,key:'ghost'}:null;
+    threads[g.uid]=threads[g.uid]||{items:[],last,unread:g.unread||0,chain:Promise.resolve(),votes:{},ghostLast:last,ghostUnread:g.unread||0};
+  });
+}
+function clearGhostLasts(){
+  if(!me) return;
+  Object.keys(threads).forEach(u=>{
+    const t=threads[u]; if(!t||!t.ghostLast) return;
+    t.ghostLast=null; t.last=t.items[t.items.length-1]||null;
+    const lr=getLR(u); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
+  });
+  renderList();
+}
+function snapSoon(){ if(!me||!appReady) return; clearTimeout(snapT); snapT=setTimeout(saveSnap,1500); }
+function saveSnap(){
+  try{
+    if(!me||!appReady||!myProf) return;
+    const out=Object.values(contacts).filter(c=>c&&c.uid).map(c=>{
+      const t=threads[c.uid]||{}, l=t.last;
+      return {uid:c.uid,name:c.name,pname:c.pname,photo:c.bot?null:(c.photo||null),uidNum:c.uidNum||'',about:c.about||'',isGroup:!!c.isGroup,verified:!!c.verified,bot:!!c.bot,links:c.links||null,
+        members:c.isGroup?Object.fromEntries(Object.entries(c.members||{}).map(([u,m])=>[u,{r:(m&&m.r)||'m'}])):null,
+        lts:l?l.ts:0, pv:l?previewOf(l,c.uid):'', unread:t.unread||0};
+    });
+    idbSet('snap:last',{uid:me.uid,email:me.email||'',prof:{name:myProf.name,photo:myProf.photo||null,uidNum:myProf.uidNum,about:myProf.about||''},contacts:out,ts:Date.now()}).catch(()=>{});
+  }catch(e){ console.warn('snap',e); }
+}
+async function bootFromCache(){
+  try{
+    const sn=await idbGet('snap:last');
+    if(!sn||!sn.uid||!Array.isArray(sn.contacts)||!sn.contacts.length||me) return;
+    bootSnap=sn;
+    me={uid:sn.uid,email:sn.email||''}; myProf=sn.prof?{uid:sn.uid,...sn.prof}:null;
+    seedGhosts(sn);
+    show('appStage'); setTab('chats'); renderChat();
+  }catch(e){ console.warn('boot cache',e); }
+}
+bootP=bootFromCache();
+
 </script>
 </body>
 </html>
