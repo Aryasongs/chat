@@ -101,7 +101,12 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .row.active .name{color:var(--blue)}
 .av{position:relative;flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 20px var(--head);aspect-ratio:1}
 .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;border-radius:50%;display:block}
-.av img.flag{position:absolute;inset:auto;right:-4%;top:-4%;width:32%;height:auto;max-width:22px;min-width:13px;aspect-ratio:1;border-radius:50%;object-fit:cover;border:2px solid var(--card);background:#fff;z-index:2}
+.av img.flag{position:absolute;inset:auto;right:-3%;bottom:-3%;width:36%;height:36%;max-width:30px;max-height:30px;min-width:15px;min-height:15px;border-radius:50%;object-fit:cover;background:#fff;box-shadow:0 0 0 2px var(--card),0 1px 4px rgba(0,0,0,.28);z-index:2}
+.av span.flag{position:absolute;right:-5%;bottom:-5%;width:38%;height:38%;max-width:32px;max-height:32px;min-width:16px;min-height:16px;display:grid;place-items:center;line-height:1;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.18);font-family:-apple-system,'Apple Color Emoji','Noto Color Emoji','Segoe UI Emoji',sans-serif;z-index:2}
+.rcpt .av span.flag{display:none}
+.chead .mid .gs.loc{transition:opacity .35s ease;opacity:1}
+.chead .mid .gs.loc.fade{opacity:0}
+.av.hasflag .dot{right:7%;top:7%;bottom:auto}
 .rcpt .av .flag{display:none}
 .av .dot{position:absolute;right:1%;bottom:1%;width:22%;max-width:20px;min-width:12px;aspect-ratio:1;border-radius:50%;background:var(--blue);border:3px solid var(--card)}
 .empty{color:var(--muted);text-align:center;padding:60px 20px;line-height:1.6;font-size:15px}
@@ -1134,6 +1139,7 @@ const firebaseConfig = {
 const QR_WORKER = 'https://messenger-qr.sgursharn076.workers.dev';
 const QR_PREFIX = 'MSG-QR:';
 const COUNTRY_WORKER = 'https://country-worker.sgursharn076.workers.dev'; // see country-worker.js
+const LOC = {};  // uid -> {region, tz}
 const CC = {};   // uid -> ISO country code, written only by the Worker (country/{uid})
 const OTP_WORKER = QR_WORKER; // OTP endpoints live on the same Worker (/otp/send, /otp/verify)
 const P = 'messenger/';           // everything lives under this node, so Kashish AI data is untouched
@@ -1243,7 +1249,10 @@ function avatar(p, size, online){
   if(p && p.photo) a.append(h('img',{src:p.photo,alt:''}));
   else a.append((p&&p.name||'?').trim().slice(0,1).toUpperCase());
   if(online) a.append(h('span',{class:'dot'}));
-  const cc=p&&CC[p.uid]; if(cc && /^[A-Za-z]{2}$/.test(cc) && !p.ccHide && size>=30){ const f=h('img',{class:'flag',alt:cc,src:'https://flagcdn.com/'+cc.toLowerCase()+'.svg'}); f.onerror=()=>f.remove(); a.append(f); }
+  const cc=p&&CC[p.uid]; if(cc && /^[A-Za-z]{2}$/.test(cc) && !p.ccHide && size>=30){ let f;
+    if(/Windows/i.test(navigator.userAgent)){ f=h('img',{class:'flag',alt:cc,src:'https://flagcdn.com/'+cc.toLowerCase()+'.svg'}); f.onerror=()=>{ f.remove(); a.classList.remove('hasflag'); }; }   // Windows has no flag emoji
+    else { f=h('span',{class:'flag',style:'font-size:'+Math.max(10,Math.round(size*.27))+'px'}, String.fromCodePoint(...[...cc.toUpperCase()].map(c=>0x1F1E6+c.charCodeAt(0)-65))); }   // native Apple/Android flag emoji
+    a.classList.add('hasflag'); a.append(f); }
   return a;
 }
 function relTime(ts){
@@ -1624,7 +1633,7 @@ async function startApp(){
   // publish this device's public key (never the private key)
   if(!(await deviceGateFast())) return;                                   // new devices must be approved first
   R(`devices/${me.uid}/${dev.id}`).update({ pub:dev.pub, label:deviceLabel(), ts:TS }).catch(()=>{});   // not awaited: the chat list must not wait for this
-  R('country/'+me.uid).on('value', s=>{ CC[me.uid]=(s.val()||{}).cc||''; renderAll(); });
+  R('country/'+me.uid).on('value', s=>{ const v=s.val()||{}; CC[me.uid]=v.cc||''; LOC[me.uid]=v; renderAll(); });
   updateMyCountry();
   show('appStage');
   // presence
@@ -1674,7 +1683,7 @@ function syncContacts(uids){
     if(contactWatch[uid]) return;
     const pr = R('users/'+uid), pf = pr.on('value', s=>{ if(s.exists()){ const pv=s.val(); contacts[uid]={uid,...pv,pname:pv.name,name:dispName(uid,pv.name)}; renderAll(); } });
     const pp = R('presence/'+uid), ppf = pp.on('value', s=>{ presence[uid]=s.val()||{}; renderAll(); });
-    const cr = R('country/'+uid), cf = cr.on('value', s=>{ CC[uid]=(s.val()||{}).cc||''; renderAll(); });
+    const cr = R('country/'+uid), cf = cr.on('value', s=>{ const v=s.val()||{}; CC[uid]=v.cc||''; LOC[uid]=v; renderAll(); if(openUid===uid) renderChatHeader(); });
     const dr = R('devices/'+uid), df = dr.on('value', devSnap(uid));
     threads[uid] = threads[uid] || { items:[], last:null, unread:0, chain:Promise.resolve() };
     const mr = R('chats/'+cidOf(me.uid,uid)+'/messages').limitToLast(150);
@@ -2251,7 +2260,7 @@ function openContactInfo(uid){
   if(c.phonePub) info.append(row('Phone number', c.phonePub));
   cleanLinks(c.links).forEach(l=>info.append(h('a',{class:'ci-row lk',href:l.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},l.t),h('span',{},l.u.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))));
   if(c.uidNum) info.append(row('UID number', String(c.uidNum)));
-  if(/^[A-Z]{2}$/.test(CC[uid]||'') && !c.ccHide) info.append(row('Last active from', ccName(CC[uid])));
+  if(/^[A-Z]{2}$/.test(CC[uid]||'') && !c.ccHide) info.append(row('Last active from', [LOC[uid]&&LOC[uid].region, ccName(CC[uid])].filter(Boolean).join(', ')));
   if(c.created && Date.now()-c.created<7*864e5) info.append(row('Account age','New account (less than 7 days)'));
   if(c.created) info.append(row('Joined', new Date(c.created).toLocaleDateString([], {month:'long',year:'numeric'})));
   const items=(threads[uid]?.items||[]).filter(i=>!i.locked&&i.p&&((i.p.t==='img'&&!i.p.vo)||i.p.t==='gif')).slice(-30).reverse();
@@ -3055,7 +3064,7 @@ function openPrivacyPage(){
       prefRow('Read receipts','Let people see when you’ve read their messages. If off, you won’t see theirs either.','rr',v=>{ if(v&&openUid) markRead(openUid); paintReceipt(); }),
       prefRow('Typing indicators','Show when you’re typing and see when others are.','ty',v=>{ if(!v){ $('#tbub')?.remove(); if(openUid) R(`typing/${chatCid(openUid)}/${me.uid}`).remove().catch(()=>{}); } })),
     h('div',{class:'sec'}, h('h3',{},'Country flag'),
-      h('div',{class:'item'}, h('span',{style:'flex:1'},'Show my country flag',h('span',{class:'sub'},'A small flag on your photo, based on where you last signed in.')),
+      h('div',{class:'item'}, h('span',{style:'flex:1'},'Show my location',h('span',{class:'sub'},'Shows your flag, state and local time to your contacts, based on where you last signed in.')),
         swEl(!(myProf&&myProf.ccHide), v=>{ R('users/'+me.uid+'/ccHide').set(v?null:true).catch(()=>toast('Could not save')); }))),
     h('div',{class:'sec'}, h('h3',{},'Safety'),
       h('button',{class:'item',onclick:openBlockedList}, svg('ban'), h('span',{}, 'Blocked contacts', h('span',{class:'sub'}, Object.keys(blockedAt).length+' blocked'))),
@@ -3323,7 +3332,7 @@ async function updateMyCountry(){
     const t=await auth.currentUser.getIdToken();
     const c=new AbortController(); setTimeout(()=>c.abort(),5000);
     const r=await fetch(COUNTRY_WORKER+'/country',{method:'POST',headers:{Authorization:'Bearer '+t},signal:c.signal});
-    const j=await r.json(); if(j&&j.cc){ CC[me.uid]=j.cc; renderAll(); }
+    const j=await r.json(); if(j&&j.cc){ CC[me.uid]=j.cc; LOC[me.uid]=j; renderAll(); }
   }catch(_){}
 }
 const ccName = cc => { try{ return new Intl.DisplayNames([navigator.language||'en'],{type:'region'}).of(cc); }catch(_){ return cc; } };
@@ -3788,10 +3797,28 @@ function openChat(uid){
   const t=threads[uid]; if(t){ t.unread=0; setLR(uid, Date.now()); }
   renderChat(); renderList();
 }
+/* Snapchat-style line under the name: "State, Country" -> fades to "Local time 3:42 PM" -> back, repeating. */
+let locTimer=null;
+function locLine(uid){
+  clearInterval(locTimer); locTimer=null;
+  const cc=CC[uid], L=LOC[uid]||{}, c=contacts[uid];
+  if(!cc || (c&&c.ccHide)) return null;
+  const place=[L.region, ccName(cc)].filter(Boolean).join(', ');
+  const el=h('div',{class:'gs loc'}, place);
+  if(!L.tz) return el;
+  const timeStr=()=>{ try{ return 'Local time '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',timeZone:L.tz}); }catch(_){ return place; } };
+  let showTime=false;
+  locTimer=setInterval(()=>{
+    if(!el.isConnected){ clearInterval(locTimer); locTimer=null; return; }
+    el.classList.add('fade');
+    setTimeout(()=>{ showTime=!showTime; el.textContent=showTime?timeStr():place; el.classList.remove('fade'); },350);
+  },3500);
+  return el;
+}
 function renderChatHeader(){
   const c=contacts[openUid]; const box=$('#chHeadMid'); if(!c||!box) return;
   const on=presence[openUid]&&presence[openUid].online;
-  box.innerHTML=''; box.append(avatar(c,70,on), h('div',{class:'nm'},nameBadge(c))); if(isKai(openUid)) box.append(h('div',{class:'gs'},isMonte(openUid)?'Official account':'Official AI assistant')); else if(c.isGroup) box.append(h('div',{class:'gs'},Object.keys(c.members||{}).length+' members')); else if(!isBlocked(openUid)) box.append(h('div',{class:'cbtns'},h('button',{'aria-label':'Voice call',onclick:e=>{ e.stopPropagation(); startCall(openUid,false); }},svg('phone')),h('button',{'aria-label':'Video call',onclick:e=>{ e.stopPropagation(); startCall(openUid,true); }},svg('vidcam'))));
+  box.innerHTML=''; box.append(avatar(c,70,on), h('div',{class:'nm'},nameBadge(c))); if(isKai(openUid)) box.append(h('div',{class:'gs'},isMonte(openUid)?'Official account':'Official AI assistant')); else if(c.isGroup) box.append(h('div',{class:'gs'},Object.keys(c.members||{}).length+' members')); else if(!isBlocked(openUid)){ const L=locLine(openUid); if(L) box.append(L); box.append(h('div',{class:'cbtns'},h('button',{'aria-label':'Voice call',onclick:e=>{ e.stopPropagation(); startCall(openUid,false); }},svg('phone')),h('button',{'aria-label':'Video call',onclick:e=>{ e.stopPropagation(); startCall(openUid,true); }},svg('vidcam')))); }
 }
 let typingUnsub=null, typingTimer=null, lastTypingSent=0;
 function renderChat(){
