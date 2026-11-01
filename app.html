@@ -2513,10 +2513,10 @@ function watchDeviceRequests(){
   const r=R('devReq/'+me.uid), f=r.on('value',()=>checkDevReq(),()=>{});
   watchers.push(()=>r.off('value',f));
 }
-async function checkDevReq(){
-  if(devReqBusy||!me||!dev) return;
-  if(document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call)){ setTimeout(checkDevReq,5000); return; }
-  devReqBusy=true;
+async function checkDevReq(force){
+  if(force===true){ if(devReqBusy) return toast('Please wait…'); } else if(devReqBusy||!me||!dev) return;
+  if(force!==true&&(document.querySelector('#modalRoot .modal')||(typeof call!=='undefined'&&call))){ setTimeout(checkDevReq,5000); return; }
+  devReqBusy=true; let shown=false;
   try{
     const v=(await R('devReq/'+me.uid).once('value')).val()||{};
     for(const [id,q] of Object.entries(v)){
@@ -2524,14 +2524,14 @@ async function checkDevReq(){
       if(!q.ts||Date.now()-q.ts>15*60*1000) continue;
       devPrompted.add(k);
       let code;
-      if(DEV_CODE_URL){ try{ code=(await devShowCode(id)).code; }catch(e){ console.warn('device code',e); continue; } }   // code is made and checked by the worker
+      if(DEV_CODE_URL){ try{ code=(await devShowCode(id)).code; }catch(e){ console.warn('device code',e); toast('Sign-in code failed: '+(e.message||e)); continue; } }   // code is made and checked by the worker
       else{
         code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0');
         const hsh=await sha256hex(`devcode:${me.uid}:${id}:${code}`);
         const res=await R(`devReq/${me.uid}/${id}/ch`).transaction(c=>c||hsh);
         if(!res.committed||res.snapshot.val()!==hsh) continue;                  // another device of yours is already showing a code
       }
-      devPreOk.add(id); { const kn=LSJ.get('kd:'+me.uid,null); if(kn&&!kn.includes(id)) LSJ.set('kd:'+me.uid,[...kn,id]); }
+      shown=true; devPreOk.add(id); { const kn=LSJ.get('kd:'+me.uid,null); if(kn&&!kn.includes(id)) LSJ.set('kd:'+me.uid,[...kn,id]); }
       const deny=async()=>{ closeModal(); try{ await R(`devReq/${me.uid}/${id}`).update({status:'denied'}); await R(`devices/${me.uid}/${id}`).remove(); }catch(_){} toast('Sign-in denied. Change your password if this was not you.'); };
       modal(h('div',{class:'sheet'}, h('h2',{},'New device sign-in'),
         h('p',{},'Someone is signing in to your account. If this is you, type this code on the new device.'),
@@ -2545,8 +2545,9 @@ async function checkDevReq(){
         h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Close')));
       break;
     }
-  }catch(e){ console.warn('device request',e); }
+  }catch(e){ console.warn('device request',e); if(force===true) toast('Error: '+(e.message||e)); }
   devReqBusy=false;
+  if(force===true&&!shown) toast('No waiting sign-in found. On the new device tap “Send the request again”.');
 }
 
 /* ---------------- help, legal and about ---------------- */
@@ -2760,6 +2761,7 @@ function renderSettings(body){
     const box=$('#devList'); if(!box) return; box.innerHTML=''; const v=s.val()||{};
     Object.entries(v).sort((a,b)=>(a[1].ts||0)-(b[1].ts||0)).forEach(([id,d])=>{
       box.append(h('div',{class:'item'}, svg('device'), h('span',{style:'flex:1'}, d.label||'Device', h('span',{class:'sub'}, id===dev.id?'This device':(d.ok===false?'Waiting for approval':'Linked '+new Date(d.ts||0).toLocaleDateString()))),
+        (id!==dev.id&&d.ok===false)?h('button',{class:'link',style:'margin-right:8px',onclick:()=>{ devPrompted.clear(); checkDevReq(true); }},'Show code'):null,
         (id===dev.id||d.ok===false)?null:h('button',{class:'link',style:'margin-right:8px',onclick:async()=>{ hsSet('ok',id); toast('Syncing history…'); await syncHistory(); toast('History sent'); }},'Send history'),
         id===dev.id?null:h('button',{class:'icon-btn',title:'Remove',onclick:async()=>{ if(confirm('Remove this device? It will stop receiving new messages.')){ await R(`devices/${me.uid}/${id}`).remove(); renderList(); } }}, svg('trash'))));
     });
