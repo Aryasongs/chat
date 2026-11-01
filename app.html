@@ -524,22 +524,36 @@ html{-webkit-tap-highlight-color:transparent}
 .m.sticker .rq{font-size:13px}
 .m.flash .bub{animation:flash 1.2s ease}
 @keyframes flash{0%,60%{box-shadow:0 0 0 4px rgba(59,130,246,.55)}100%{box-shadow:0 0 0 0 rgba(59,130,246,0)}}
-.mo{position:fixed;inset:0;z-index:70;background:rgba(10,14,30,.42);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:flex;align-items:center;justify-content:center;padding:18px;animation:moin .16s ease-out;overflow:auto}
+/* iOS-style long-press menu */
+.mo{--g:rgba(255,255,255,.28);--gt:#000;--gl:rgba(60,60,67,.22);--gp:rgba(120,120,128,.22);--gd:#FF3B30;--gs:rgba(255,255,255,.9);--gs2:rgba(255,255,255,.5);
+  position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.26);overflow:hidden;animation:moin .2s ease-out;touch-action:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mo{--g:rgba(70,70,78,.26);--gt:#fff;--gl:rgba(255,255,255,.2);--gp:rgba(255,255,255,.16);--gd:#FF453A;--gs:rgba(255,255,255,.5);--gs2:rgba(255,255,255,.2);background:rgba(0,0,0,.45)}}
+.mo::before{content:'';position:absolute;inset:0;-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
+.mo.out{animation:moout .14s ease-in forwards;pointer-events:none}
 @keyframes moin{from{opacity:0}to{opacity:1}}
-.mo-in{display:flex;flex-direction:column;gap:12px;width:100%;max-width:440px;margin:auto}
+@keyframes moout{to{opacity:0}}
+.mo-in{position:absolute;display:flex;flex-direction:column;gap:10px;width:max-content;max-width:calc(100% - 24px)}
 .mo.me .mo-in{align-items:flex-end}.mo.them .mo-in{align-items:flex-start}
-.mo .m{max-width:100%;margin:0;pointer-events:none;max-height:34vh;overflow:hidden;transform:none!important}
+.mo .m{max-width:none;margin:0;flex:none;pointer-events:none;overflow:hidden;transform:none!important;animation:clpop .32s cubic-bezier(.2,1.2,.4,1) both;transform-origin:center}
+@keyframes clpop{0%{transform:scale(.97)!important}60%{transform:scale(1.025)!important}100%{transform:scale(1)!important}}
 .mo .swr{display:none}
-.rxbar{display:flex;gap:2px;background:var(--card);border-radius:32px;padding:6px 8px;box-shadow:0 14px 40px rgba(0,0,0,.28);animation:rxpop .2s cubic-bezier(.3,1.5,.5,1)}
-.rxbar button{width:44px;height:44px;font-size:26px;border-radius:50%;transition:transform .12s;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;line-height:1}
-.rxbar button:hover,.rxbar button:active{transform:scale(1.25)}
-.rxbar button.on{background:var(--blue)}
-.mact{background:var(--card);border-radius:20px;min-width:230px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.28)}
-.mact button{display:flex;justify-content:space-between;align-items:center;gap:20px;width:100%;padding:14px 18px;color:var(--navy);font-size:16px;font-weight:500;border-bottom:1px solid var(--line)}
-.mact button:last-child{border-bottom:0}
-.mact button:active{background:var(--soft)}
-.mact button.dg{color:var(--danger)}
-.mact svg{width:20px;height:20px}
+.rxbar{display:flex;align-items:center;height:56px;padding:0 8px;border-radius:28px;background:var(--g);-webkit-backdrop-filter:blur(26px) saturate(2.4) brightness(1.12);backdrop-filter:blur(26px) saturate(2.4) brightness(1.12);box-shadow:0 14px 44px rgba(0,0,0,.35),inset 1px 1px 1.5px var(--gs),inset -1px -1px 1.5px var(--gs2),inset 0 0 14px rgba(255,255,255,.07);position:relative;transform-origin:bottom left;animation:rxpop .34s cubic-bezier(.2,1.25,.4,1) both}
+.mo.me .rxbar{transform-origin:bottom right}
+.rxbar::after,.mact::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 32%,rgba(255,255,255,0) 68%,rgba(255,255,255,.12) 100%)}
+@keyframes rxpop{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:scale(1)}}
+.rxbar button{width:46px;height:46px;border-radius:50%;font-size:27px;line-height:1;display:grid;place-items:center;transition:transform .15s cubic-bezier(.3,1.6,.5,1),background .15s;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+.rxbar button:active{transform:scale(1.3)}
+.rxbar button.on{background:#0A84FF}
+.rxbar button .ha{font:900 13px/.88 "Arial Rounded MT Bold",Inter,system-ui,sans-serif;letter-spacing:.2px;color:#2F8BFF;-webkit-text-stroke:2.4px #fff;paint-order:stroke fill;text-align:center}
+.rxbar button.on .ha{color:#fff;-webkit-text-stroke:0}
+.mact{min-width:252px;padding:8px;border-radius:34px;background:var(--g);-webkit-backdrop-filter:blur(26px) saturate(2.4) brightness(1.12);backdrop-filter:blur(26px) saturate(2.4) brightness(1.12);box-shadow:0 14px 44px rgba(0,0,0,.35),inset 1px 1px 1.5px var(--gs),inset -1px -1px 1.5px var(--gs2),inset 0 0 14px rgba(255,255,255,.07);position:relative;transform-origin:top left;animation:mpop .34s cubic-bezier(.2,1.2,.4,1) both;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif}
+.mo.me .mact{transform-origin:top right}
+@keyframes mpop{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:scale(1)}}
+.mact button{display:flex;align-items:center;gap:14px;width:100%;height:50px;padding:0 16px;border-radius:26px;color:var(--gt);font-size:19px;font-weight:400;text-align:left;border:0}
+.mact button:active{background:var(--gp)}
+.mact button.dg{color:var(--gd)}
+.mact button svg{width:24px;height:24px;stroke-width:1.6;flex:none}
+.mact hr{border:0;height:1px;background:var(--gl);margin:6px 14px}
 .rbar{display:flex;align-items:center;gap:10px;margin:0 6px 8px;padding:9px 8px 9px 14px;background:var(--soft);border-radius:18px;border-left:4px solid var(--blue)}
 .rbar .rt{flex:1;min-width:0}
 .rbar .rt b{display:block;font:600 13px var(--head);color:var(--blue)}
@@ -3272,26 +3286,37 @@ function openForward(srcUid,it){
   modal(h('div',{class:'sheet'},h('h2',{},'Forward to…'),q,list,sendB,h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Cancel')));
 }
 /* long-press menu */
-function closeMsgMenu(){ document.querySelector('.mo')?.remove(); }
+function closeMsgMenu(){ const m=document.querySelector('.mo:not(.out)'); if(!m) return; m.classList.add('out'); setTimeout(()=>m.remove(),150); }
 function openMsgMenu(uid,it,el){
   if(document.querySelector('.mo')||it.locked) return;
   if(navigator.vibrate) try{ navigator.vibrate(12); }catch(_){}
   const mine=it.from===me.uid, p=it.p, opened=Date.now();
-  const cl=el.cloneNode(true); cl.removeAttribute('data-k'); cl.querySelector('.rx')?.remove(); cl.querySelector('.rcpt')?.remove(); cl.style.transform='';
+  const r=el.getBoundingClientRect();
+  const cl=el.cloneNode(true); cl.removeAttribute('data-k'); cl.querySelector('.rx')?.remove(); cl.querySelector('.rcpt')?.remove(); cl.style.transform=''; cl.style.width=r.width+'px';
   const myR=((threads[uid]?.reacts||{})[it.key]||{})[me.uid], close=closeMsgMenu;
-  const items=[];
+  const g=[[],[],[]];   // iOS-style groups: reply/forward | copy | destructive
   if(!it.unsent){
-    items.push(['Reply','reply',()=>{ close(); setReply(uid,it); }]);
-    if(p.t!=='poll'&&!p.vo) items.push(['Forward','fwd',()=>{ close(); openForward(uid,it); }]);
-    if(p.t==='text') items.push(['Copy','copy',()=>{ close(); copyText(p.text); }]);
-    if(p.t==='gif') items.push(['Copy link','copy',()=>{ close(); copyText(p.url); }]);
-    if(mine) items.push(['Unsend','undo',()=>{ close(); unsendMsg(uid,it); },1]);
+    g[0].push(['Reply','reply',()=>{ close(); setReply(uid,it); }]);
+    if(p.t!=='poll'&&!p.vo) g[0].push(['Forward','fwd',()=>{ close(); openForward(uid,it); }]);
+    if(p.t==='text') g[1].push(['Copy','copy',()=>{ close(); copyText(p.text); }]);
+    if(p.t==='gif') g[1].push(['Copy link','copy',()=>{ close(); copyText(p.url); }]);
+    if(mine) g[2].push(['Unsend','undo',()=>{ close(); unsendMsg(uid,it); },1]);
   }
-  items.push(['Delete for you','trash',()=>{ close(); deleteForMe(uid,it); },1]);
-  const bar=it.unsent?null:h('div',{class:'rxbar'},REACTS.map(e=>h('button',{class:myR&&myR.e===e?'on':'',onclick:()=>{ close(); sendReact(uid,it,e); }},animEmoji(e,32))));
-  const act=h('div',{class:'mact'},items.map(([l,ic,fn,dg])=>h('button',{class:dg?'dg':'',onclick:fn},l,svg(ic==='undo'?'back':ic))));
-  const mo=h('div',{class:'mo '+(mine?'me':'them'),onclick:e=>{ if(Date.now()-opened>350) close(); }},h('div',{class:'mo-in'},bar,cl,act));
+  g[2].push(['Delete for you','trash',()=>{ close(); deleteForMe(uid,it); },1]);
+  const btn=([l,ic,fn,dg])=>h('button',{class:dg?'dg':'',onclick:fn},svg(ic==='undo'?'back':ic),l);
+  const act=h('div',{class:'mact'});
+  g.filter(x=>x.length).forEach((x,i)=>{ if(i) act.append(h('hr')); x.forEach(i2=>act.append(btn(i2))); });
+  const bar=it.unsent?null:h('div',{class:'rxbar'},REACTS.map(e=>h('button',{class:myR&&myR.e===e?'on':'',onclick:()=>{ close(); sendReact(uid,it,e); }},e==='😂'?h('span',{class:'ha'},'HA',h('br'),'HA'):animEmoji(e,30))));
+  const inn=h('div',{class:'mo-in'},bar,cl,act);
+  const mo=h('div',{class:'mo '+(mine?'me':'them'),onclick:e=>{ if(Date.now()-opened>350&&!e.target.closest('.mact,.rxbar')) close(); }},inn);
   document.body.append(mo);
+  // sit exactly where the pressed bubble was, then nudge into the viewport
+  const W=innerWidth,H=innerHeight,pad=14;
+  if(mine) inn.style.right=Math.max(12,W-r.right)+'px'; else inn.style.left=Math.max(12,r.left)+'px';
+  let ih=inn.offsetHeight;
+  if(ih>H-2*pad){ cl.style.maxHeight=Math.max(80,cl.offsetHeight-(ih-(H-2*pad)))+'px'; ih=inn.offsetHeight; }
+  const off=bar?bar.offsetHeight+10:0;
+  inn.style.top=Math.max(pad,Math.min(r.top-off,H-ih-pad-8))+'px';
 }
 function bindMsgGestures(el,it,uid){
   let timer=null, sx=0, sy=0, dx=0, mode=null, lastTap=0;
