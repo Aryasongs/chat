@@ -996,25 +996,27 @@ body.stopen{overflow:hidden}
 .stvlen{color:#fff;font:600 13px var(--body);background:rgba(255,255,255,.16);border-radius:14px;padding:6px 12px}
 #syncBar{position:fixed;left:50%;top:max(64px,calc(env(safe-area-inset-top) + 56px));transform:translateX(-50%);z-index:60;background:rgba(30,30,40,.82);color:#fff;font:500 12.5px var(--body);padding:6px 14px;border-radius:16px;pointer-events:none;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
 
-/* ---- chat header: flat bar + liquid-glass controls ---- */
-.chead{position:relative;padding:56px 12px 8px;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--card)}
+/* ---- chat header: flat bar + liquid-glass controls (all sizes in em -> scales with screen width / display zoom) ---- */
+.chead{position:relative;font-size:clamp(13px,4.1vw,16px);padding:calc(max(env(safe-area-inset-top,0px),8px) + .4em) .75em .5em;grid-template-columns:3em minmax(0,1fr) auto;gap:.65em;align-items:center;background:var(--card)}
+body.kb .chead{padding-top:.6em}
 .chead::before{display:none}
 .chead .icon-btn,.wpon .chead .icon-btn,.chead .cpill{
   --lg:color-mix(in srgb,var(--navy) 8%,transparent);
   background:linear-gradient(160deg,color-mix(in srgb,var(--card) 45%,var(--lg)),var(--lg));
   -webkit-backdrop-filter:blur(18px) saturate(1.8);backdrop-filter:blur(18px) saturate(1.8);
   border:.5px solid color-mix(in srgb,var(--navy) 14%,transparent);
-  box-shadow:0 8px 22px rgba(20,30,70,.16),inset 0 1px 1px rgba(255,255,255,.65),inset 0 -1px 1px rgba(255,255,255,.18),inset 0 0 14px rgba(255,255,255,.12)}
-.chead .icon-btn,.wpon .chead .icon-btn{width:48px;height:48px;border-radius:50%;color:var(--navy);margin:0}
-.chead .icon-btn svg{width:26px;height:26px;stroke-width:2.2}
-.chead .mid.pd{background:transparent;border:0;border-radius:0;min-height:48px;padding:0;gap:11px}
-.chead .mid.pd .nm{font:600 17.5px var(--head);letter-spacing:-.1px}
-.chead .mid.pd .gs{font-size:13px;color:var(--muted)}
+  box-shadow:0 .5em 1.4em rgba(20,30,70,.16),inset 0 1px 1px rgba(255,255,255,.65),inset 0 -1px 1px rgba(255,255,255,.18),inset 0 0 .9em rgba(255,255,255,.12)}
+.chead .icon-btn,.wpon .chead .icon-btn{width:3em;height:3em;border-radius:50%;color:var(--navy);margin:0}
+.chead .icon-btn svg{width:1.6em;height:1.6em;stroke-width:2.2}
+.chead .mid.pd{background:transparent;border:0;border-radius:0;min-height:3em;padding:0;gap:.7em}
+.chead .mid.pd .av{width:2.9em!important;height:2.9em!important;font-size:1.05em!important}
+.chead .mid.pd .nm{font:600 1.1em/1.2 var(--head);letter-spacing:-.1px}
+.chead .mid.pd .gs{font-size:.8em;color:var(--muted)}
 .chr{gap:0}
-.chead .cpill{width:auto;height:48px;border-radius:24px;padding:0 4px;gap:0;overflow:hidden;flex-direction:row-reverse}
-.chead .cpill button{width:52px;height:48px;border-radius:0;color:var(--blue);background:transparent;box-shadow:none}
+.chead .cpill{width:auto;height:3em;border-radius:1.5em;padding:0 .25em;gap:0;overflow:hidden;flex-direction:row-reverse}
+.chead .cpill button{width:3.2em;height:3em;border-radius:0;color:var(--blue);background:transparent;box-shadow:none}
 .chead .cpill button:active{background:color-mix(in srgb,var(--blue) 14%,transparent)}
-.chead .cpill button svg{width:25px;height:25px}
+.chead .cpill button svg{width:1.55em;height:1.55em}
 .ci-row .sub{display:block;font-size:12.5px;color:var(--muted);margin-top:1px}
 </style>
 </head>
