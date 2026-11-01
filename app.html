@@ -174,6 +174,7 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .dg-or::before,.dg-or::after{content:"";flex:1;height:1px;background:var(--line)}
 .dg-big{font:700 38px var(--head);letter-spacing:8px;color:var(--navy);margin:10px 0 14px}
 .dg-card .link{display:block;margin:12px auto 0}
+.dg-card .dg-small{font-size:12.5px;color:var(--muted);margin-top:18px;text-decoration:underline;text-underline-offset:3px}
 .sec{margin-bottom:22px}
 .sec h3{font:500 13px var(--head);color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:0 0 10px}
 .me-card{display:flex;gap:16px;align-items:center;padding:6px 0 18px}
@@ -2400,7 +2401,17 @@ function textSheet(title,paras){
    A device that signs in while you already have trusted devices must be approved first:
    1) a 6-digit code appears on your other device (with this device's name and place) and you type it here, or
    2) a one-time code is sent to your email (needs the worker in device-otp-worker.js). */
-const DEV_OTP_URL='';          // e.g. 'https://marsx-device.<you>.workers.dev'  (leave empty until the worker is deployed)
+// email OTP for new devices reuses the sign-up OTP worker (OTP_WORKER: /otp/send, /otp/verify)
+const DEV_CODE_URL='https://marsx-devcode.sgursharn076.workers.dev';         // device-code worker, e.g. 'https://marsx-devcode.<you>.workers.dev' (see device-code-worker.js). Empty = old browser-only check.
+async function devCodeCall(path,body){ const t=await auth.currentUser.getIdToken(); const r=await fetch(DEV_CODE_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); let j={}; try{ j=await r.json(); }catch(_){} if(!r.ok) throw new Error(j.error||'Request failed'); return j; }
+/* a trusted device asks the worker for the code of a waiting device, proving it owns its private key */
+async function devShowCode(target){
+  const ch=await devCodeCall('/dc/challenge',{dev:dev.id});
+  const peer=await crypto.subtle.importKey('jwk',ch.epub,ECDH,false,[]);
+  const hk=await crypto.subtle.deriveKey({name:'ECDH',public:peer},dev.priv,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
+  const proof=hex(await crypto.subtle.sign('HMAC',hk,enc.encode(ch.id+':'+target)));
+  return devCodeCall('/dc/show',{dev:dev.id,id:ch.id,proof,target});
+}
 const devPreOk=new Set(), devPrompted=new Set();
 const maskEmail=e=>{ const [u,d]=String(e||'').split('@'); return u?u[0]+'***@'+d:''; };
 async function devPlace(){
@@ -2411,7 +2422,10 @@ async function deviceGate(){
   const all=(await R('devices/'+me.uid).once('value')).val()||{}, mine=all[dev.id];
   if(mine&&mine.ok!==false) return true;
   const trusted=Object.entries(all).filter(([id,d])=>id!==dev.id&&d.ok!==false);
-  if(!trusted.length){ await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:true}); return true; }   // your first device
+  if(!trusted.length){   // your first device
+    if(DEV_CODE_URL){ try{ await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:false}); await devCodeCall('/dc/first',{dev:dev.id}); return true; }catch(e){ console.warn('first device',e); } }
+    await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:true}); return true;
+  }
   await R(`devices/${me.uid}/${dev.id}`).set({pub:dev.pub,label:deviceLabel(),ts:TS,ok:false});
   return runDeviceGate();
 }
@@ -2428,7 +2442,6 @@ function runDeviceGate(){
     const codeInp=()=>h('input',{class:'dg-code',inputmode:'numeric',autocomplete:'one-time-code',maxlength:6,placeholder:'••••••',oninput:e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,6); }});
     const logout=()=>h('button',{class:'link',onclick:()=>{ done=true; okRef.off('value',l1); reqRef.off('value',l2); gate.remove(); auth.signOut(); resolve(false); }},'Log out');
     async function sendReq(){ tries=0; err.textContent=''; try{ await reqRef.set({label:deviceLabel(),loc:place,ts:TS,status:'pending'}); }catch(e){ err.textContent='Could not reach your other device. Check your connection.'; } }
-    async function otpCall(path,body){ const t=await auth.currentUser.getIdToken(); const r=await fetch(DEV_OTP_URL+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify(body)}); let j={}; try{ j=await r.json(); }catch(_){} if(!r.ok) throw new Error(j.error||'Request failed'); return j; }
     function view(){
       gate.innerHTML=''; err.textContent='';
       if(mode==='code'){
@@ -2437,6 +2450,7 @@ function runDeviceGate(){
           const v=inp.value; if(v.length!==6){ err.textContent='Enter the 6-digit code.'; return; }
           go.disabled=true; err.textContent='';
           try{
+            if(DEV_CODE_URL){ try{ await devCodeCall('/dc/verify',{dev:dev.id,code:v}); finish(true); }catch(e){ err.textContent=e.message||'Wrong code.'; go.disabled=false; } return; }
             const q=(await reqRef.once('value')).val()||{};
             if(q.status==='locked'){ err.textContent='Too many wrong codes. Send the request again.'; go.disabled=false; return; }
             if(!q.ch){ err.textContent='Waiting for your other device to show a code. Open marsX there.'; go.disabled=false; return; }
@@ -2451,8 +2465,7 @@ function runDeviceGate(){
           h('p',{},'For your security, approve this sign-in from a device you already use. A code is now showing on your other device. Type it here.'),
           infoBox(), inp, err, go,
           h('button',{class:'link',onclick:async()=>{ await sendReq(); toast('Request sent again'); }},'Send the request again'),
-          h('div',{class:'dg-or'},'Can’t use your other device?'),
-          h('button',{class:'btn ghost',onclick:()=>{ mode='otp'; view(); }},'Get a code by email'),
+          h('button',{class:'link dg-small',onclick:()=>{ mode='otp'; view(); }},'Can’t use your other device? Use OTP'),
           logout()));
         setTimeout(()=>inp.focus({preventScroll:true}),80);
       }else{
@@ -2460,24 +2473,24 @@ function runDeviceGate(){
         const send=async()=>{
           if(Date.now()-lastSend<30000){ err.textContent='Please wait a few seconds before asking again.'; return; }
           sendB.disabled=true; err.textContent='';
-          try{ const j=await otpCall('/otp/send',{dev:dev.id}); otpSent=true; otpTo=j.to||''; lastSend=Date.now(); view(); toast('Code sent'); }
+          try{ await otpApi('/otp/send',{email:auth.currentUser.email}); otpSent=true; otpTo=maskEmail(auth.currentUser.email); lastSend=Date.now(); view(); toast('Code sent'); }
           catch(e){ err.textContent=e.message||'Could not send the code.'; sendB.disabled=false; }
         };
         sendB.onclick=send;
         const verify=async()=>{
           if(inp.value.length!==6){ err.textContent='Enter the 6-digit code.'; return; }
           go.disabled=true; err.textContent='';
-          try{ await otpCall('/otp/verify',{dev:dev.id,code:inp.value}); const ok=(await okRef.once('value')).val(); if(ok===true) finish(true); else{ err.textContent='Approved, finishing sign-in…'; } }
+          try{ await otpApi('/otp/verify',{email:auth.currentUser.email,code:inp.value}); await okRef.set(true); reqRef.remove().catch(()=>{}); finish(true); }
           catch(e){ err.textContent=e.message||'Wrong code.'; go.disabled=false; }
         };
         go.onclick=verify; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') verify(); });
         const body=[h('div',{class:'dg-ic'},svg('mail')), h('h2',{},'Verify by email'), infoBox()];
-        if(!DEV_OTP_URL){
+        if(!OTP_WORKER){
           body.push(h('p',{},'Email codes are not switched on for this app yet. Use the code from your other device.'),
-            h('button',{class:'btn ghost',style:'margin-top:12px',onclick:()=>{ mode='code'; view(); }},'Use my other device'),
+            h('button',{class:'link',onclick:()=>{ mode='code'; view(); }},'Use my other device'),
             h('button',{class:'link',onclick:async()=>{ await okRef.set(true); finish(true); }},'Skip for now (not secure)'));
         }else if(!otpSent){
-          body.push(h('p',{},'We will email a one-time code to your account email address.'),err,sendB,h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ mode='code'; view(); }},'Use my other device'));
+          body.push(h('p',{},'We will email a one-time code to your account email address.'),err,sendB,h('button',{class:'link',onclick:()=>{ mode='code'; view(); }},'Use my other device'));
         }else{
           body.push(h('p',{},'We sent a 6-digit code to '+otpTo+'. It works for 10 minutes.'),inp,err,go,h('button',{class:'link',onclick:send},'Send a new code'),h('button',{class:'link',onclick:()=>{ mode='code'; view(); }},'Use my other device'));
           setTimeout(()=>inp.focus({preventScroll:true}),80);
@@ -2510,10 +2523,14 @@ async function checkDevReq(){
       const k=id+':'+(q&&q.ts); if(id===dev.id||!q||q.status!=='pending'||devPrompted.has(k)) continue;
       if(!q.ts||Date.now()-q.ts>15*60*1000) continue;
       devPrompted.add(k);
-      const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0');
-      const hsh=await sha256hex(`devcode:${me.uid}:${id}:${code}`);
-      const res=await R(`devReq/${me.uid}/${id}/ch`).transaction(c=>c||hsh);
-      if(!res.committed||res.snapshot.val()!==hsh) continue;                  // another device of yours is already showing a code
+      let code;
+      if(DEV_CODE_URL){ try{ code=(await devShowCode(id)).code; }catch(e){ console.warn('device code',e); continue; } }   // code is made and checked by the worker
+      else{
+        code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0');
+        const hsh=await sha256hex(`devcode:${me.uid}:${id}:${code}`);
+        const res=await R(`devReq/${me.uid}/${id}/ch`).transaction(c=>c||hsh);
+        if(!res.committed||res.snapshot.val()!==hsh) continue;                  // another device of yours is already showing a code
+      }
       devPreOk.add(id); { const kn=LSJ.get('kd:'+me.uid,null); if(kn&&!kn.includes(id)) LSJ.set('kd:'+me.uid,[...kn,id]); }
       const deny=async()=>{ closeModal(); try{ await R(`devReq/${me.uid}/${id}`).update({status:'denied'}); await R(`devices/${me.uid}/${id}`).remove(); }catch(_){} toast('Sign-in denied. Change your password if this was not you.'); };
       modal(h('div',{class:'sheet'}, h('h2',{},'New device sign-in'),
