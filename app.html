@@ -1612,8 +1612,8 @@ setTimeout(()=>{ try{ if(typeof REACTS!=='undefined') REACTS.forEach(e=>animEmoj
 
 async function startApp(){
   // publish this device's public key (never the private key)
-  if(!(await deviceGate())) return;                                   // new devices must be approved first
-  await R(`devices/${me.uid}/${dev.id}`).update({ pub:dev.pub, label:deviceLabel(), ts:TS });
+  if(!(await deviceGateFast())) return;                                   // new devices must be approved first
+  R(`devices/${me.uid}/${dev.id}`).update({ pub:dev.pub, label:deviceLabel(), ts:TS }).catch(()=>{});   // not awaited: the chat list must not wait for this
   show('appStage');
   // presence
   const pr = R('presence/'+me.uid);
@@ -2523,24 +2523,7 @@ const OUTBOX=(()=>{
   };
 })();
 window.addEventListener('online',()=>{ setTimeout(()=>OUTBOX.flush(),600); });
-/* ---------------- gentle re-sync after the app was in the background ----------------
-   Only if the app was away for a while AND the server does not answer a tiny read within 4 s do we reset the
-   connection (once). A healthy connection is never touched. */
-let hiddenAt=0, waking=false;
-function wakeDb(){
-  try{
-    if(!me||!db||waking||navigator.onLine===false) return; waking=true;
-    let done=false;
-    const fin=()=>{ waking=false; };
-    const t=setTimeout(()=>{ if(done) return; done=true;
-      try{ db.goOffline(); setTimeout(()=>{ try{ db.goOnline(); }catch(_){} fin(); },400); }catch(_){ fin(); } },4000);
-    const ok=()=>{ if(done) return; done=true; clearTimeout(t); fin(); };
-    R('presence/'+me.uid).once('value').then(ok,ok);     // real server round-trip (this path is not cached locally)
-  }catch(_){ waking=false; }
-}
-const wakeBack=()=>{ const away=hiddenAt?Date.now()-hiddenAt:0; hiddenAt=0; if(away>15000) wakeDb(); };
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') hiddenAt=Date.now(); else wakeBack(); });
-try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const m=e.data&&e.data.marsx; if(m==='flush-outbox') OUTBOX.flush(); else if(m==='resubscribe') setupPush(); else if(m==='wake') wakeDb(); }); }catch(_){}
+try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const m=e.data&&e.data.marsx; if(m==='flush-outbox') OUTBOX.flush(); else if(m==='resubscribe') setupPush(); }); }catch(_){}
 
 /* ---- UI ---- */
 function showBanner(){
@@ -3316,6 +3299,13 @@ const maskEmail=e=>{ const [u,d]=String(e||'').split('@'); return u?u[0]+'***@'+
 async function devPlace(){
   try{ const c=new AbortController(); setTimeout(()=>c.abort(),4000); const r=await fetch('https://ipwho.is/',{signal:c.signal}); const j=await r.json(); if(j&&j.success!==false){ const t=[j.city,j.region,j.country].filter(Boolean).join(', '); if(t) return t; } }catch(_){}
   try{ return (Intl.DateTimeFormat().resolvedOptions().timeZone||'').replace(/_/g,' '); }catch(_){ return ''; }
+}
+/* This device was already approved earlier -> open the app at once and re-check in the background. */
+async function deviceGateFast(){
+  const key='devok:'+me.uid+':'+dev.id; let cached=false; try{ cached=localStorage.getItem(key)==='1'; }catch(_){}
+  if(!cached){ const ok=await deviceGate(); if(ok){ try{ localStorage.setItem(key,'1'); }catch(_){} } return ok; }
+  deviceGate().then(ok=>{ if(!ok){ try{ localStorage.removeItem(key); }catch(_){} } }).catch(()=>{});
+  return true;
 }
 async function deviceGate(){
   const all=(await R('devices/'+me.uid).once('value')).val()||{}, mine=all[dev.id];
@@ -4617,7 +4607,7 @@ async function nameOf(uid){
 
 async function startModWatch(){
   const bref = R('blocks/'+me.uid);
-  await new Promise(res=>{
+  await Promise.race([new Promise(res=>{
     let first=true;
     const f = bref.on('value', s=>{
       const was = !!(openUid && blockedAt[openUid]); blockedAt = s.val()||{};
@@ -4625,15 +4615,16 @@ async function startModWatch(){
       renderList(); if(openUid && was!==!!blockedAt[openUid]) renderChat();
     }, ()=>{ if(first){ first=false; res(); } });
     watchers.push(()=>bref.off('value',f));
-  });
-  try{ isAdmin = (await R('admins/'+me.uid).once('value')).val()===true; }catch(e){ isAdmin=false; }
-  const mref = R('moderation/'+me.uid), mf = mref.on('value', s=>applyMod(s.val()), ()=>{});
-  watchers.push(()=>mref.off('value',mf));
-  if(isAdmin){
+  }), new Promise(r=>setTimeout(r,1500))]);
+  isAdmin=false;
+  R('admins/'+me.uid).once('value').then(s=>{
+    isAdmin = s.val()===true; if(!isAdmin) return;
     const rq = R('reports').orderByChild('status').equalTo('open');
     const rf = rq.on('value', s=>{ openReportCount=s.numChildren(); if(tab==='settings') renderList(); }, ()=>{});
-    watchers.push(()=>rq.off('value',rf));
-  }
+    watchers.push(()=>rq.off('value',rf)); if(tab==='settings') renderList();
+  }).catch(()=>{});
+  const mref = R('moderation/'+me.uid), mf = mref.on('value', s=>applyMod(s.val()), ()=>{});
+  watchers.push(()=>mref.off('value',mf));
 }
 
 /* ----- block ----- */
