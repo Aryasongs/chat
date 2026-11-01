@@ -1109,6 +1109,7 @@ $('#otpGo').onclick=async()=>{
       }
       throw e;
     }
+    try{ marsVerified.add(auth.currentUser.uid); }catch(_){}   // the sign-up code already proved the email
     otpBusy=false; otpReset(); setMode(false); ['#aPass','#aPass2','#otpCode'].forEach(x=>$(x).value='');
     await onUser(auth.currentUser);   // continue into profile setup / app
   }catch(e){
@@ -1210,6 +1211,43 @@ $('#suSave').onclick = async () => {
 };
 
 /* ---------------- session ---------------- */
+/* ---------------- first time on marsX with an account made elsewhere ----------------
+   The same Firebase login is shared with Kashish AI, Nexor Sparks, MONTÈ… Someone who already has an account there and opens
+   marsX for the first time has no marsX profile and no marsX device yet, so there is nobody to approve them.
+   They must prove they own the email (6-digit code, same OTP worker as sign-up) before the marsX profile is created. */
+const marsVerified=new Set(); let firstGateOpen=false;
+function firstTimeGate(user){
+  return new Promise(resolve=>{
+    const email=user.email; if(!email||firstGateOpen){ resolve(!!email===false); return; }
+    firstGateOpen=true; let last=0;
+    const gate=h('div',{class:'dgate'}); document.body.append(gate);
+    const err=h('div',{class:'err',style:'min-height:20px;margin:6px 0 0'});
+    const inp=h('input',{class:'dg-code',inputmode:'numeric',autocomplete:'one-time-code',maxlength:6,placeholder:'••••••',oninput:e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,6); if(e.target.value.length===6) verify(); }});
+    const go=h('button',{class:'btn',style:'margin-top:10px'},'Verify');
+    const end=ok=>{ firstGateOpen=false; gate.remove(); resolve(ok); };
+    const send=async first=>{
+      if(!first&&Date.now()-last<30000){ err.textContent='Please wait a few seconds before asking again.'; return; }
+      err.textContent=''; last=Date.now();
+      try{ await otpApi('/otp/send',{email}); if(!first) toast('New code sent'); }catch(e){ err.textContent=e.message||'Could not send the code.'; }
+    };
+    let busy=false;
+    async function verify(){
+      if(busy) return; if(inp.value.length!==6){ err.textContent='Enter the 6-digit code.'; return; }
+      busy=true; go.disabled=true; err.textContent='';
+      try{ await otpApi('/otp/verify',{email,code:inp.value}); marsVerified.add(user.uid); end(true); return; }
+      catch(e){ err.textContent=e.message||'Wrong code.'; }
+      busy=false; go.disabled=false;
+    }
+    go.onclick=verify; inp.addEventListener('keydown',e=>{ if(e.key==='Enter') verify(); });
+    gate.append(h('div',{class:'dg-card'}, h('div',{class:'dg-ic'},svg('mail')), h('h2',{},'Welcome to marsX'),
+      h('p',{},'This is your first time on marsX. We sent a 6-digit code to '+maskEmail(email)+' to confirm it is you. It works for 10 minutes.'),
+      inp, err, go,
+      h('button',{class:'link',onclick:()=>send(false)},'Send a new code'),
+      h('button',{class:'link',onclick:()=>{ end(false); auth.signOut(); }},'Log out')));
+    setTimeout(()=>inp.focus({preventScroll:true}),80);
+    send(true);
+  });
+}
 async function onUser(user){
   if(otpBusy && user) return;   // wait until the password is attached
   stopApp();
@@ -1218,7 +1256,10 @@ async function onUser(user){
   try{
     dev = await loadOrCreateDevice(user.uid);
     const snap = await R('users/'+user.uid).once('value');
-    if(!snap.exists()){ myProf=null; openSetup(false); return; }
+    if(!snap.exists()){                                                     // never used marsX before
+      if(!marsVerified.has(user.uid) && !(await firstTimeGate(user))) return;
+      myProf=null; openSetup(false); return;
+    }
     myProf = { uid:user.uid, ...snap.val() };
     await startApp();
   }catch(e){ console.error(e); toast('Error: '+(e.message||e)); show('authStage'); }
@@ -1261,7 +1302,7 @@ function stopApp(){
 }
 function deviceLabel(){
   const u=navigator.userAgent; let os='Device';
-  if(/Android/i.test(u)) os='Android'; else if(/iPhone|iPad/i.test(u)) os='iOS'; else if(/Windows/i.test(u)) os='Windows'; else if(/Mac/i.test(u)) os='Mac'; else if(/Linux/i.test(u)) os='Linux';
+  if(/Android/i.test(u)) os='Android'; else if(/iPhone|iPad/i.test(u)) os='iOS'; else if(/Windows/i.test(u)) os='Windows'; else if(/Mac/i.test(u)) os=(navigator.maxTouchPoints>1?'iOS':'Mac');   // iPhone/iPad Safari can report a Mac user agent else if(/Linux/i.test(u)) os='Linux';
   let br='Browser'; if(/Edg\//.test(u)) br='Edge'; else if(/OPR\//.test(u)) br='Opera'; else if(/Chrome\//.test(u)) br='Chrome'; else if(/Firefox\//.test(u)) br='Firefox'; else if(/Safari\//.test(u)) br='Safari';
   return br+' on '+os;
 }
