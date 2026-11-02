@@ -1688,7 +1688,7 @@ async function startApp(){
   watchers.push(()=>cr.off('value',cf));
   const ug = R('userGroups/'+me.uid), ugf = ug.on('value', s => syncGroups(Object.keys(s.val()||{})), ()=>{});
   watchers.push(()=>ug.off('value',ugf));
-  initKai(); initMonte();
+  initKai(); initMonte(); initBiz();
   setTab('chats'); renderChat();
   appReady=true; hideSyncBar(); if(openUid&&threads[openUid]){ threads[openUid].unread=0; setLR(openUid,Date.now()); } snapSoon(); setTimeout(clearGhostLasts,8000);
   if(pendingOpen&&contacts[pendingOpen]&&openUid!==pendingOpen){ const pu=pendingOpen; pendingOpen=null; openChat(pu); } else pendingOpen=null;
@@ -1700,7 +1700,7 @@ function stopApp(){
   histMap={}; hsAsked=new Set(); clearTimeout(hsTimer); clearTimeout(hrT);
   Object.values(contactWatch).forEach(f=>f()); Object.values(groupWatch).forEach(f=>f()); groupWatch={}; profiles={}; ciOpen=null;
   try{ STATUS.reset(); }catch(_){}
-  watchers.forEach(f=>{ try{f();}catch(e){} }); watchers=[]; contacts={}; presence={}; threads={}; openUid=null; blockedAt={}; isAdmin=false; myMod=null; openReportCount=0; clearTimeout(modTimer); { const o=document.getElementById('modOverlay'); if(o) o.remove(); } document.body.classList.remove('chat-open');
+  watchers.forEach(f=>{ try{f();}catch(e){} }); watchers=[]; contacts={}; presence={}; threads={}; openUid=null; blockedAt={}; bizBlk={}; isAdmin=false; myMod=null; openReportCount=0; clearTimeout(modTimer); { const o=document.getElementById('modOverlay'); if(o) o.remove(); } document.body.classList.remove('chat-open');
 }
 function deviceLabel(){
   const u=navigator.userAgent; let os='Device';
@@ -1848,6 +1848,7 @@ async function sendPayload(uid, payload, mediaDataUrl, fromOutbox){
   if(!fromOutbox && navigator.onLine===false && !isKai(uid) && OUTBOX.can(payload)){
     try{ await OUTBOX.add(uid,payload,mediaDataUrl); toast('You are offline — message will be sent automatically'); return; }catch(_){}
   }
+  if(isBiz(uid)){ toast('Businesses on marsX send updates only. Replies are not available.'); throw new Error('Business chats are read-only'); }
   if(isMonte(uid)){ toast('MONTÈ sends official updates only. Replies are not available.'); throw new Error('MONTÈ is read-only'); }
   if(isKai(uid)) return kaiSend(payload);
   { const dmv=getDM(uid); if(dmv && payload && !['react','vote','unsend','calllog','sys','dm','call','vo'].includes(payload.t)) payload={...payload,ex:Date.now()+dmv}; }
@@ -2296,7 +2297,7 @@ function openContactInfo(uid){
   card.querySelector('.ci')?.remove();
   const blocked=isBlocked(uid), pr=presence[uid];
   let status='';
-  if(isKai(uid)) status=isMonte(uid)?'Official account':'Official AI assistant';
+  if(isKai(uid)) status=isBiz(uid)?'Verified business':isMonte(uid)?'Official account':'Official AI assistant';
   else if(blocked) status='Blocked';
   else if(pr&&pr.online) status='Online';
   else if(pr&&pr.last){ const r=relTime(pr.last); status='Last seen '+(r==='now'?'just now':/^\d+ (min|hours?|days?)$/.test(r)?r+' ago':r); }
@@ -2325,14 +2326,14 @@ function openContactInfo(uid){
     h('div',{class:'ci-hero'}, av, h('h2',{},nameBadge(c)), h('div',{class:'st'},status)),
     h('div',{class:'ci-acts'},
       act('chat','Message',close),
-      isKai(uid)?act('globe','Website',()=>window.open(isMonte(uid)?MONTE_SITE:KAI_SITE,'_blank','noopener')):act('edit','Edit name',()=>{ close(); openRenameContact(uid); }),
+      isBiz(uid)?null:isKai(uid)?act('globe','Website',()=>window.open(isMonte(uid)?MONTE_SITE:KAI_SITE,'_blank','noopener')):act('edit','Edit name',()=>{ close(); openRenameContact(uid); }),
       isKai(uid)?null:act('image','Wallpaper',()=>openWallpaper(uid)),
-      isKai(uid)?null:(blocked ? act('ban','Unblock',async()=>{ await unblockUser(uid); close(); }) : act('ban','Block',()=>{ close(); confirmBlock(uid); },'dg'))),
+      (isKai(uid)&&!isBiz(uid))?null:(blocked ? act('ban','Unblock',async()=>{ await unblockUser(uid); close(); }) : act('ban','Block',()=>{ close(); confirmBlock(uid); },'dg'))),
     info,
     ciSettings(uid,close),
     items.length ? h('div',{class:'ci-h'},'Photos & GIFs') : null, items.length ? h('div',{class:'ci-group'},media) : null,
     h('div',{class:'ci-group'},
-      isKai(uid)?h('div',{class:'ci-row ic'},svg('shield'),isMonte(uid)?'Official MONTÈ account. You receive updates on new products, discounts and offers here. This chat is read-only and not end-to-end encrypted':'AI assistant. Messages here are processed by Kashish AI and are not end-to-end encrypted'):h('div',{class:'ci-row ic'},svg('lock'),'Messages are end-to-end encrypted'),
+      isKai(uid)?h('div',{class:'ci-row ic'},svg('shield'),isBiz(uid)?'Verified business on marsX. This chat is read-only and not end-to-end encrypted. Use Block to stop messages from this business.':isMonte(uid)?'Official MONTÈ account. You receive updates on new products, discounts and offers here. This chat is read-only and not end-to-end encrypted':'AI assistant. Messages here are processed by Kashish AI and are not end-to-end encrypted'):h('div',{class:'ci-row ic'},svg('lock'),'Messages are end-to-end encrypted'),
       isKai(uid)?null:h('button',{class:'ci-row ic dg',onclick:()=>{ close(); openReport(uid); }},svg('flag'),'Report '+c.name.split(' ')[0])));
   card.append(ci);
 }
@@ -2724,7 +2725,8 @@ const KAI_ENDPOINTS=[
 ];
 const MONTE_UID='monte', MONTE_SITE='https://monte.kashishai.com';
 const isMonte=u=>u===MONTE_UID;
-const isKai=u=>u===KAI_UID||u===MONTE_UID;   // official local contacts: no E2EE, no receipts, no block/report
+const isBiz=u=>typeof u==='string'&&u.indexOf('biz_')===0;
+const isKai=u=>u===KAI_UID||u===MONTE_UID||isBiz(u);   // official local contacts: no E2EE, no receipts, no block/report
 const vbadge=cls=>h('img',{class:'vbadge '+(cls||''),src:KAI_BADGE,alt:'Verified',title:'Verified official account',draggable:'false'});
 const nameBadge=c=>c&&c.verified?[c.name,vbadge()]:[c?c.name:''];
 let kaiGen=false, kaiAgain=false;
@@ -2950,6 +2952,39 @@ async function initMonte(){
   watchers.push(()=>{ try{ q.off('child_added',addf); q.off('child_removed',remf); }catch(_){} });
   if(has) show();
   else if(contacts[MONTE_UID]&&contacts[MONTE_UID].ghost){ delete contacts[MONTE_UID]; delete threads[MONTE_UID]; renderList(); }
+}
+
+/* =====================================================================
+   Verified businesses (marsX Business API).
+   • Messages arrive at messenger/bizInbox/<uid>/<id>, written only by the Business API Worker.
+   • One read-only chat per business (uid = business id, "biz_..."). Block writes messenger/bizBlocks/<uid>/<bizId>.
+   ===================================================================== */
+function bizText(m){ const p=[]; if(m.title) p.push(String(m.title).slice(0,160)); if(m.body) p.push(String(m.body).slice(0,2000)); if(m.link&&/^https:\/\//i.test(String(m.link))) p.push(String(m.link).slice(0,500)); return p.join('\n\n'); }
+function bizAdd(bid,it,live){
+  const t=threads[bid]; if(!t||t.items.some(x=>x.key===it.key)) return;
+  if(it.ts<=clrTs(chatCid(bid))||isDeletedLocal(bid,it.key)) return;
+  t.items.push(it); t.items.sort((a,b)=>a.ts-b.ts||(a.key<b.key?-1:1)); t.last=t.items[t.items.length-1];
+  const lr=getLR(bid); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
+  if(openUid===bid){ if(document.visibilityState==='visible'){ setLR(bid,Math.max(Date.now(),it.ts)); t.unread=0; } appendMsg(it); }
+  else if(live&&PREF.get('nall')&&PREF.get('nsnd')&&!isMuted(bid)) beep('msg');
+  renderList();
+}
+function initBiz(){
+  const uid=me.uid; if(!uid) return; const alive=()=>me&&me.uid===uid;
+  const bk=R('bizBlocks/'+uid), bkf=bk.on('value',s=>{ if(!alive()) return; bizBlk=s.val()||{}; renderList(); if(openUid&&isBiz(openUid)) renderChat(); },()=>{});
+  const q=R('bizInbox/'+uid).limitToLast(200);
+  const addf=q.on('child_added',s=>{ const v=s.val(); if(!v||!alive()||!isBiz(v.from)) return; const b=v.from, ts=Number(v.ts)||Date.now();
+    if(!contacts[b]||contacts[b].ghost){
+      contacts[b]={ uid:b, name:'Business', pname:'Business', photo:null, verified:true, bot:true, about:'Verified business on marsX. This chat is read-only.', links:[] };
+      presence[b]={online:true}; threads[b]={ items:[], last:null, unread:0, chain:Promise.resolve(), votes:{}, reacts:{} };
+    }
+    contacts[b].name=contacts[b].pname=String(v.name||'Business').slice(0,80); contacts[b].verified=!!v.verified;
+    bizAdd(b,{ key:'bz'+s.key, from:b, ts, rec:{from:b,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false },Date.now()-ts<120000); },()=>{});
+  const remf=q.on('child_removed',s=>{ const v=s.val(); if(!v||!alive()) return; const t=threads[v.from]; if(!t) return;
+    t.items=t.items.filter(i=>i.key!=='bz'+s.key); t.last=t.items[t.items.length-1]||null;
+    const lr=getLR(v.from); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
+    if(openUid===v.from) renderChat(); renderList(); },()=>{});
+  watchers.push(()=>{ try{ bk.off('value',bkf); q.off('child_added',addf); q.off('child_removed',remf); }catch(_){} });
 }
 
 /* ---------------- list rendering ---------------- */
@@ -3872,7 +3907,7 @@ function renderChatHeader(){
   box.className='mid pd'; box.innerHTML='';
   clearInterval(locTimer); locTimer=null;
   const pt=h('div',{class:'pt'}, h('div',{class:'nm'},nameBadge(c)));
-  if(isKai(openUid)) pt.append(h('div',{class:'gs'},isMonte(openUid)?'Official account':'Official AI assistant'));
+  if(isKai(openUid)) pt.append(h('div',{class:'gs'},isBiz(openUid)?'Verified business':isMonte(openUid)?'Official account':'Official AI assistant'));
   else if(c.isGroup) pt.append(h('div',{class:'gs'},Object.keys(c.members||{}).length+' members'));
   else if(on) pt.append(h('div',{class:'gs',style:'color:var(--blue)'},'Online'));
   else { const L=locLine(openUid); if(L) pt.append(L); }   // location + local time only while offline
@@ -3894,12 +3929,12 @@ function renderChat(){
     return;
   }
   const uid=openUid, c=contacts[uid], cid=chatCid(uid);
-  const input = h('input',{placeholder:isMonte(openUid)?'Official updates only':isKai(openUid)?'Ask Kashish AI anything…':'Message...',autocomplete:'off',enterkeyhint:'send'});
+  const input = h('input',{placeholder:(isMonte(openUid)||isBiz(openUid))?'Updates only':isKai(openUid)?'Ask Kashish AI anything…':'Message...',autocomplete:'off',enterkeyhint:'send'});
   const pill = h('div',{class:'pill'});
   const plus = h('button',{class:'plus','aria-label':'Attach'},svg('plus'));
   const emBtn = h('button',{class:'em','aria-label':'Emoji'},svg('smile'));
   const sendBtn = h('button',{class:'sendb hidden','aria-label':'Send'},svg('send'));
-  pill.append(...(isKai(uid)?[]:[plus]),input,...(isMonte(uid)?[]:[sendBtn,emBtn])); if(isMonte(uid)){ input.disabled=true; pill.style.opacity='.6'; }
+  pill.append(...(isKai(uid)?[]:[plus]),input,...((isMonte(uid)||isBiz(uid))?[]:[sendBtn,emBtn])); if(isMonte(uid)||isBiz(uid)){ input.disabled=true; pill.style.opacity='.6'; }
   const setSend=on=>{
     const shown=!sendBtn.classList.contains('hidden'); if(shown===on) return;
     sendBtn.classList.toggle('hidden',!on);
@@ -3924,7 +3959,7 @@ function renderChat(){
     msgs, isBlocked(uid) ? blockBar(uid) : comp, fileIn, fileOnce);
   renderChatHeader(); wpApply(msgs,uid);
 
-  msgs.append(h('div',{class:'e2e'},svg(isKai(uid)?'shield':'lock'),isMonte(uid) ? 'Official messages from MONTÈ. This chat is read-only and is not end-to-end encrypted like chats with people.' : isKai(uid) ? 'Kashish AI is an AI assistant. Messages in this chat are sent to Kashish AI’s servers to write a reply, so they are not end-to-end encrypted like chats with people.' : isGroup(uid) ? 'Messages are end-to-end encrypted. Only members of this group can read them.' : 'Messages are end-to-end encrypted. Only you and '+c.name+' can read them.'));
+  msgs.append(h('div',{class:'e2e'},svg(isKai(uid)?'shield':'lock'),isBiz(uid) ? 'Verified business messages. This chat is read-only and is not end-to-end encrypted like chats with people.' : isMonte(uid) ? 'Official messages from MONTÈ. This chat is read-only and is not end-to-end encrypted like chats with people.' : isKai(uid) ? 'Kashish AI is an AI assistant. Messages in this chat are sent to Kashish AI’s servers to write a reply, so they are not end-to-end encrypted like chats with people.' : isGroup(uid) ? 'Messages are end-to-end encrypted. Only members of this group can read them.' : 'Messages are end-to-end encrypted. Only you and '+c.name+' can read them.'));
   (threads[uid]?.items||[]).forEach(appendMsg);
   msgs.scrollTop=msgs.scrollHeight;
 
@@ -4725,7 +4760,8 @@ async function approveQr(sid){
    Block / Report / Moderation
    ===================================================================== */
 const REASONS = ['Spam','Harassment or bullying','Hate speech','Threats or violence','Sexual content','Scam or fraud','Impersonation','Other'];
-const isBlocked = uid => !!blockedAt[uid];
+let bizBlk = {};
+const isBlocked = uid => !!blockedAt[uid]||!!bizBlk[uid];
 const blockBar = uid => h('div',{class:'blockbar'}, h('span',{},'You blocked this contact.'), h('button',{class:'link',onclick:()=>unblockUser(uid)},'Unblock'));
 const nameCache = {};
 async function nameOf(uid){
@@ -4757,8 +4793,8 @@ async function startModWatch(){
 }
 
 /* ----- block ----- */
-async function blockUser(uid){ try{ await R('blocks/'+me.uid+'/'+uid).set(TS); toast('Blocked'); }catch(e){ toast('Could not block: '+(e.message||e)); } }
-async function unblockUser(uid){ try{ await R('blocks/'+me.uid+'/'+uid).remove(); toast('Unblocked'); }catch(e){ toast('Could not unblock: '+(e.message||e)); } }
+async function blockUser(uid){ try{ await R((isBiz(uid)?'bizBlocks/':'blocks/')+me.uid+'/'+uid).set(TS); toast('Blocked'); }catch(e){ toast('Could not block: '+(e.message||e)); } }
+async function unblockUser(uid){ try{ await R((isBiz(uid)?'bizBlocks/':'blocks/')+me.uid+'/'+uid).remove(); toast('Unblocked'); }catch(e){ toast('Could not unblock: '+(e.message||e)); } }
 function confirmBlock(uid){
   const c=contacts[uid]; if(!c) return;
   modal(h('div',{class:'sheet'}, h('h2',{},'Block '+c.name+'?'),
@@ -4770,7 +4806,7 @@ function openChatActions(uid){
   const c=contacts[uid]; if(!c) return; const b=isBlocked(uid);
   if(isKai(uid)) return modal(h('div',{class:'sheet'}, h('h2',{},nameBadge(c)),
     h('button',{class:'item',onclick:()=>{ closeModal(); openContactInfo(uid); }}, svg('user'), 'View profile'),
-    h('button',{class:'item',onclick:()=>{ closeModal(); window.open(isMonte(uid)?MONTE_SITE:KAI_SITE,'_blank','noopener'); }}, svg('globe'), isMonte(uid)?'Open MONTÈ':'Open kashishai.com'),
+    isBiz(uid)?h('button',{class:'item',onclick:()=>{ closeModal(); isBlocked(uid)?unblockUser(uid):confirmBlock(uid); }}, svg('ban'), isBlocked(uid)?'Unblock business':'Block business'):h('button',{class:'item',onclick:()=>{ closeModal(); window.open(isMonte(uid)?MONTE_SITE:KAI_SITE,'_blank','noopener'); }}, svg('globe'), isMonte(uid)?'Open MONTÈ':'Open kashishai.com'),
     h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, svgc('pin','#FF9500'), isPinned(uid)?'Unpin chat':'Pin chat'),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, svgc('archive','#0A84FF'), isArchived(uid)?'Unarchive chat':'Archive chat'),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleFav(uid); }}, svgc('star','#FFB400'), isFav(uid)?'Remove from favourites':'Add to favourites'),
