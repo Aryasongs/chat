@@ -2977,6 +2977,9 @@ function initBiz(){
     if(!contacts[b]||contacts[b].ghost){
       contacts[b]={ uid:b, name:'Business', pname:'Business', photo:null, verified:true, bot:true, about:'Verified business on marsX. This chat is read-only.', links:[] };
       presence[b]={online:true}; threads[b]={ items:[], last:null, unread:0, chain:Promise.resolve(), votes:{}, reacts:{} };
+      const pr=R('bizProfiles/'+b), prf=pr.on('value',s=>{ if(!alive()||!contacts[b]) return; const l=s.exists()&&s.val()&&s.val().logo;
+        contacts[b].photo=(typeof l==='string'&&l.length<82000&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(l))?l:null; renderList(); if(openUid===b) renderChatHeader(); },()=>{});
+      watchers.push(()=>{ try{ pr.off('value',prf); }catch(_){} });
     }
     contacts[b].name=contacts[b].pname=String(v.name||'Business').slice(0,80); contacts[b].verified=!!v.verified;
     bizAdd(b,{ key:'bz'+s.key, from:b, ts, rec:{from:b,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false },Date.now()-ts<120000); },()=>{});
