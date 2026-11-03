@@ -2298,7 +2298,7 @@ function openContactInfo(uid){
   card.querySelector('.ci')?.remove();
   const blocked=isBlocked(uid), pr=presence[uid];
   let status='';
-  if(isKai(uid)) status=isBiz(uid)?'Verified business':isMonte(uid)?'Official account':'Official AI assistant';
+  if(isKai(uid)) status=isBiz(uid)?('Verified business'+(c.uidNum?' · '+c.uidNum:'')):isMonte(uid)?'Official account':'Official AI assistant';
   else if(blocked) status='Blocked';
   else if(pr&&pr.online) status='Online';
   else if(pr&&pr.last){ const r=relTime(pr.last); status='Last seen '+(r==='now'?'just now':/^\d+ (min|hours?|days?)$/.test(r)?r+' ago':r); }
@@ -2311,7 +2311,7 @@ function openContactInfo(uid){
   if(c.pname&&c.pname!==c.name) info.append(row('Profile name', c.pname));
   if(c.phonePub) info.append(row('Phone number', c.phonePub));
   cleanLinks(c.links).forEach(l=>info.append(h('a',{class:'ci-row lk',href:l.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},l.t),h('span',{},l.u.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))));
-  if(c.uidNum) info.append(row('UID number', String(c.uidNum)));
+  if(c.uidNum) info.append(row(isBiz(uid)?'Business number':'UID number', String(c.uidNum)));
   if(/^[A-Z]{2}$/.test(CC[uid]||'') && !c.ccHide) info.append(row('Last active from', [LOC[uid]&&LOC[uid].region, ccName(CC[uid])].filter(Boolean).join(', ')));
   if(c.created && Date.now()-c.created<7*864e5) info.append(row('Account age','New account (less than 7 days)'));
   if(c.created) info.append(row('Joined', new Date(c.created).toLocaleDateString([], {month:'long',year:'numeric'})));
@@ -2990,6 +2990,7 @@ function initBiz(){
       watchers.push(()=>{ try{ pr.off('value',prf); }catch(_){} });
     }
     contacts[b].name=contacts[b].pname=String(v.name||'Business').slice(0,80); contacts[b].verified=!!v.verified;
+    if(/^\d{4,20}$/.test(String(v.num||''))) contacts[b].uidNum=String(v.num);   // the business's own marsX number
     const own=!!v.me, bzc=(v.kind==='otp'&&/^\d{4,8}$/.test(String(v.code||'')))?String(v.code):null, fr=own?me.uid:b;
     bizAdd(b,{ key:'bz'+s.key, from:fr, ts, rec:{from:fr,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false, bzcode:bzc },Date.now()-ts<120000); },()=>{});
   const remf=q.on('child_removed',s=>{ const v=s.val(); if(!v||!alive()) return; const t=threads[v.from]; if(!t) return;
@@ -3919,7 +3920,7 @@ function renderChatHeader(){
   box.className='mid pd'; box.innerHTML='';
   clearInterval(locTimer); locTimer=null;
   const pt=h('div',{class:'pt'}, h('div',{class:'nm'},nameBadge(c)));
-  if(isKai(openUid)) pt.append(h('div',{class:'gs'},isBiz(openUid)?'Verified business':isMonte(openUid)?'Official account':'Official AI assistant'));
+  if(isKai(openUid)) pt.append(h('div',{class:'gs'},isBiz(openUid)?('Verified business'+(contacts[openUid]&&contacts[openUid].uidNum?' · '+contacts[openUid].uidNum:'')):isMonte(openUid)?'Official account':'Official AI assistant'));
   else if(c.isGroup) pt.append(h('div',{class:'gs'},Object.keys(c.members||{}).length+' members'));
   else if(on) pt.append(h('div',{class:'gs',style:'color:var(--blue)'},'Online'));
   else { const L=locLine(openUid); if(L) pt.append(L); }   // location + local time only while offline
