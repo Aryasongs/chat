@@ -248,7 +248,7 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .m.them{align-self:flex-start;align-items:flex-start}
 .bub{padding:16px 30px 16px 30px;font-size:17px;line-height:1.45;word-break:break-word;white-space:pre-wrap;border-radius:32px}
 .m.me .bub{background:var(--blue);color:#fff;border-bottom-right-radius:0}
-.otpc{margin-top:12px;padding-top:8px;border-top:1px solid rgba(127,127,127,.3)}.otpcopy{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:none;border:0;color:var(--blue);font-weight:600;font-size:16px;font-family:inherit;cursor:pointer;padding:6px 0}.otpcopy svg{width:18px;height:18px}
+.autotag{margin-top:8px;font-size:12px;opacity:.65}.otpc{margin-top:12px;padding-top:8px;border-top:1px solid rgba(127,127,127,.3)}.otpcopy{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:none;border:0;color:var(--blue);font-weight:600;font-size:16px;font-family:inherit;cursor:pointer;padding:6px 0}.otpcopy svg{width:18px;height:18px}
 .m.them .bub{background:var(--soft);color:var(--ink);border-bottom-left-radius:0}
 .m .ts{font-size:15px;color:var(--muted);margin-top:7px}
 .m.sticker .bub{background:none!important;padding:0;font-size:96px;line-height:1.1}
@@ -2992,7 +2992,7 @@ function initBiz(){
     contacts[b].name=contacts[b].pname=String(v.name||'Business').slice(0,80); contacts[b].verified=!!v.verified;
     if(/^\d{4,20}$/.test(String(v.num||''))) contacts[b].uidNum=String(v.num);   // the business's own marsX number
     const own=!!v.me, bzc=(v.kind==='otp'&&/^\d{4,8}$/.test(String(v.code||'')))?String(v.code):null, fr=own?me.uid:b;
-    bizAdd(b,{ key:'bz'+s.key, from:fr, ts, rec:{from:fr,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false, bzcode:bzc },Date.now()-ts<120000); },()=>{});
+    bizAdd(b,{ key:'bz'+s.key, from:fr, ts, rec:{from:fr,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false, bzcode:bzc, bzauto:!!v.auto },Date.now()-ts<120000); },()=>{});
   const remf=q.on('child_removed',s=>{ const v=s.val(); if(!v||!alive()) return; const t=threads[v.from]; if(!t) return;
     t.items=t.items.filter(i=>i.key!=='bz'+s.key); t.last=t.items[t.items.length-1]||null;
     const lr=getLR(v.from); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
@@ -4617,6 +4617,7 @@ function appendMsg(it){
   } else if(p.t==='loc'){
     el.classList.add('img'); bub.append(locView(p));
   }
+  if(it.bzauto && !it.unsent && !mine){ bub.append(h('div',{class:'autotag'},'Automated message')); }
   if(it.bzcode && !it.unsent && !mine){ bub.append(h('div',{class:'otpc'},h('button',{class:'otpcopy',onclick:e=>{ e.stopPropagation(); copyText(it.bzcode); }},svg('copy'),'Copy code'))); }
   if(p && p.rq && typeof p.rq==='object' && !it.unsent){
     const q=p.rq, qk=String(q.k||''), qf=String(q.f||''), qx=String(q.x||'').slice(0,120);
