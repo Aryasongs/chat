@@ -2310,6 +2310,7 @@ function openContactInfo(uid){
   const info=h('div',{class:'ci-group'}, row('About', (c.about&&c.about!=='null'&&c.about!=='undefined')?c.about:'Hey there! I’m using marsX.'));
   if(c.pname&&c.pname!==c.name) info.append(row('Profile name', c.pname));
   if(c.phonePub) info.append(row('Phone number', c.phonePub));
+  if(isBiz(uid)){ if(c.bizcat) info.append(row('Category',c.bizcat)); if(c.bizaddr) info.append(row('Address',c.bizaddr)); if(c.bizhours) info.append(row('Opening hours',c.bizhours)); if(c.bizsite) info.append(h('a',{class:'ci-row lk',href:c.bizsite,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},'Website'),h('span',{},c.bizsite.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))); }
   cleanLinks(c.links).forEach(l=>info.append(h('a',{class:'ci-row lk',href:l.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},l.t),h('span',{},l.u.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))));
   if(c.uidNum) info.append(row(isBiz(uid)?'Business number':'UID number', String(c.uidNum)));
   if(/^[A-Z]{2}$/.test(CC[uid]||'') && !c.ccHide) info.append(row('Last active from', [LOC[uid]&&LOC[uid].region, ccName(CC[uid])].filter(Boolean).join(', ')));
@@ -2985,7 +2986,8 @@ function initBiz(){
     if(!contacts[b]||contacts[b].ghost){
       contacts[b]={ uid:b, name:'Business', pname:'Business', photo:null, verified:true, bot:true, about:'Verified business on marsX. You can reply to its messages.', links:[] };
       presence[b]={online:true}; threads[b]={ items:[], last:null, unread:0, chain:Promise.resolve(), votes:{}, reacts:{} };
-      const pr=R('bizProfiles/'+b), prf=pr.on('value',s=>{ if(!alive()||!contacts[b]) return; const l=s.exists()&&s.val()&&s.val().logo;
+      const pr=R('bizProfiles/'+b), prf=pr.on('value',s=>{ if(!alive()||!contacts[b]) return; const pv=(s.exists()&&s.val())||{}, l=pv.logo, tx=(x,n)=>(typeof x==='string'&&x.trim())?x.replace(/[\u0000-\u001F]/g,' ').slice(0,n):'';
+        contacts[b].about=tx(pv.about,400)||'Verified business on marsX. You can reply to its messages.'; contacts[b].bizcat=tx(pv.category,60); contacts[b].bizaddr=tx(pv.address,200); contacts[b].bizhours=tx(pv.hours,120); contacts[b].bizsite=(typeof pv.website==='string'&&/^https:\/\/\S{1,200}$/.test(pv.website))?pv.website:'';
         contacts[b].photo=(typeof l==='string'&&l.length<82000&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(l))?l:null; renderList(); if(openUid===b) renderChatHeader(); },()=>{});
       watchers.push(()=>{ try{ pr.off('value',prf); }catch(_){} });
     }
