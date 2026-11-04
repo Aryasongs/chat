@@ -248,7 +248,7 @@ svg.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stro
 .m.them{align-self:flex-start;align-items:flex-start}
 .bub{padding:16px 30px 16px 30px;font-size:17px;line-height:1.45;word-break:break-word;white-space:pre-wrap;border-radius:32px}
 .m.me .bub{background:var(--blue);color:#fff;border-bottom-right-radius:0}
-.autotag{margin-top:8px;font-size:12px;opacity:.65}.otpc{margin-top:12px;padding-top:8px;border-top:1px solid rgba(127,127,127,.3)}.otpcopy{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:none;border:0;color:var(--blue);font-weight:600;font-size:16px;font-family:inherit;cursor:pointer;padding:6px 0}.otpcopy svg{width:18px;height:18px}
+.bzbs{display:flex;flex-direction:column;gap:6px;margin-top:10px}.bzb{display:block;text-align:center;padding:9px 12px;border-radius:12px;background:rgba(127,127,127,.15);color:var(--blue);font-weight:600;font-size:15px;font-family:inherit;text-decoration:none;border:0;cursor:pointer}.autotag{margin-top:8px;font-size:12px;opacity:.65}.otpc{margin-top:12px;padding-top:8px;border-top:1px solid rgba(127,127,127,.3)}.otpcopy{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:none;border:0;color:var(--blue);font-weight:600;font-size:16px;font-family:inherit;cursor:pointer;padding:6px 0}.otpcopy svg{width:18px;height:18px}
 .m.them .bub{background:var(--soft);color:var(--ink);border-bottom-left-radius:0}
 .m .ts{font-size:15px;color:var(--muted);margin-top:7px}
 .m.sticker .bub{background:none!important;padding:0;font-size:96px;line-height:1.1}
@@ -2729,10 +2729,17 @@ const MONTE_UID='monte', MONTE_SITE='https://monte.kashishai.com';
 const isMonte=u=>u===MONTE_UID;
 const isBiz=u=>typeof u==='string'&&u.indexOf('biz_')===0;
 const BIZ_API='https://marsx-business-api.sgursharn076.workers.dev';
+async function bizSeen(b){   // read receipts: tell the Worker which business messages this customer has opened
+  const t=threads[b]; if(!t) return; const num=String((myProf&&myProf.uidNum)||''); if(!/^\d{4,20}$/.test(num)) return;
+  const its=t.items.filter(i=>i.mid&&i.from===b&&(!i.rcpt||i.rcpt<Date.now())).slice(-20); if(!its.length) return;
+  its.forEach(i=>{ i.rcpt=Date.now()+60000; });
+  try{ const tok=await auth.currentUser.getIdToken(); const r=await fetch(BIZ_API+'/app/receipt',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({biz:b,num,mids:its.map(i=>i.mid)})}); if(r.ok) its.forEach(i=>{ i.rcpt=Infinity; }); }catch(e){}
+}
+setInterval(()=>{ try{ if(typeof openUid==='string'&&isBiz(openUid)&&document.visibilityState==='visible') bizSeen(openUid); }catch(e){} },3000);
 async function bizReply(bid,payload){   // the Worker checks the 7-day window, block list and rate limit, then stores the reply in this chat
   if(!payload||payload.t!=='text'){ toast('You can send text replies to businesses.'); throw new Error('Text only'); }
   const num=String((myProf&&myProf.uidNum)||''); if(!/^\d{4,20}$/.test(num)){ toast('Your UID number is not ready yet. Try again in a moment.'); throw new Error('UID not ready'); }
-  let r,d={}; try{ const tok=await auth.currentUser.getIdToken(); r=await fetch(BIZ_API+'/app/reply',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({biz:bid,num,text:String(payload.text).slice(0,1000)})}); d=await r.json().catch(()=>({})); }catch(e){ toast('Network error. Please try again.'); throw e; }
+  let r,d={}; try{ const tok=await auth.currentUser.getIdToken(); r=await fetch(BIZ_API+'/app/reply',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({biz:bid,num,text:String(payload.text).slice(0,1000),btn:payload.btn===true})}); d=await r.json().catch(()=>({})); }catch(e){ toast('Network error. Please try again.'); throw e; }
   if(!r.ok){ const m=(d.error&&d.error.message)||'Could not send your reply.'; toast(m); throw new Error(m); }
 }
 const isKai=u=>u===KAI_UID||u===MONTE_UID||isBiz(u);   // official local contacts: no E2EE, no receipts, no block/report
@@ -2993,8 +3000,9 @@ function initBiz(){
     }
     contacts[b].name=contacts[b].pname=String(v.name||'Business').slice(0,80); contacts[b].verified=!!v.verified;
     if(/^\d{4,20}$/.test(String(v.num||''))) contacts[b].uidNum=String(v.num);   // the business's own marsX number
+    const bzb=(Array.isArray(v.btns)?v.btns:[]).slice(0,3).map(x=>x&&typeof x.x==='string'&&x.x.trim()?(x.t==='url'&&typeof x.u==='string'&&/^https:\/\/\S{1,480}$/.test(x.u)?{t:'url',x:x.x.slice(0,20),u:x.u}:(x.t==='reply'?{t:'reply',x:x.x.slice(0,20)}:null)):null).filter(Boolean);
     const own=!!v.me, bzc=(v.kind==='otp'&&/^\d{4,8}$/.test(String(v.code||'')))?String(v.code):null, fr=own?me.uid:b;
-    bizAdd(b,{ key:'bz'+s.key, from:fr, ts, rec:{from:fr,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false, bzcode:bzc, bzauto:!!v.auto },Date.now()-ts<120000); },()=>{});
+    bizAdd(b,{ key:'bz'+s.key, from:fr, ts, rec:{from:fr,fd:'kai',ts}, p:{t:'text',text:bizText(v)}, mk:null, locked:false, bzcode:bzc, bzauto:!!v.auto, mid:(typeof v.mid==='string'&&/^(msg|otp)_[a-f0-9]{16}$/.test(v.mid))?v.mid:null, bzbtns:bzb },Date.now()-ts<120000); },()=>{});
   const remf=q.on('child_removed',s=>{ const v=s.val(); if(!v||!alive()) return; const t=threads[v.from]; if(!t) return;
     t.items=t.items.filter(i=>i.key!=='bz'+s.key); t.last=t.items[t.items.length-1]||null;
     const lr=getLR(v.from); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
@@ -4619,6 +4627,7 @@ function appendMsg(it){
   } else if(p.t==='loc'){
     el.classList.add('img'); bub.append(locView(p));
   }
+  if(it.bzbtns && it.bzbtns.length && !it.unsent && !mine){ const bx=h('div',{class:'bzbs'}); it.bzbtns.forEach(bt=>{ if(bt.t==='url') bx.append(h('a',{class:'bzb',href:bt.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},bt.x)); else bx.append(h('button',{class:'bzb',onclick:e=>{ e.stopPropagation(); bizReply(it.from,{t:'text',text:bt.x,btn:true}).catch(()=>{}); }},bt.x)); }); bub.append(bx); }
   if(it.bzauto && !it.unsent && !mine){ bub.append(h('div',{class:'autotag'},'Automated message')); }
   if(it.bzcode && !it.unsent && !mine){ bub.append(h('div',{class:'otpc'},h('button',{class:'otpcopy',onclick:e=>{ e.stopPropagation(); copyText(it.bzcode); }},svg('copy'),'Copy code'))); }
   if(p && p.rq && typeof p.rq==='object' && !it.unsent){
