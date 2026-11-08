@@ -312,23 +312,23 @@ catch(x){m.style.color="var(--bad)";m.textContent="Could not save. Email us at "
 /* Kashish AI chat */
 let LAST=null;const H=[];
 const EP=[["https://facrcheck.sgursharn076.workers.dev","llama-3.3-70b-versatile"],["https://gemininexor.sgursharn076.workers.dev","gemini-3.5-flash"],["https://sparky-cfai.sgursharn076.workers.dev","@cf/meta/llama-3.3-70b-instruct-fp8-fast"]];
-const SYS=()=>"You are Kashish AI, the friendly diet guide on the Momentum Fitness website. Reply in simple Hinglish (Roman Hindi mixed with English) unless the user writes in plain English. Keep answers under 90 words, warm and practical, using desi foods (dal, roti, paneer, eggs, curd, chana, sabzi, soya). Explain calories, protein, meal timing and portions in simple words. Never diagnose, never suggest crash or extreme diets, and tell users with medical conditions, pregnancy or under 18 to consult a doctor. "+(LAST?"The user's profile: "+JSON.stringify(LAST)+". Use it when explaining their plan.":"If the user has not filled the diet form, invite them to do so.");
+const SYS=()=>"You are Kashish AI, the friendly diet guide on the Momentum Fitness website. Always reply in clear, simple English only, even if the user writes in Hindi or Hinglish. Keep answers under 90 words, warm and practical, using desi foods (dal, roti, paneer, eggs, curd, chana, sabzi, soya). Explain calories, protein, meal timing and portions in simple words. Never diagnose, never suggest crash or extreme diets, and tell users with medical conditions, pregnancy or under 18 to consult a doctor. "+(LAST?"The user's profile: "+JSON.stringify(LAST)+". Use it when explaining their plan.":"If the user has not filled the diet form, invite them to do so.");
 async function ask(){const msgs=[{role:"system",content:SYS()},...H.slice(-8)];
 const t=EP.map(([u,m])=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:m,messages:msgs,temperature:.7,max_tokens:400})}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{const c=j.choices[0].message.content;if(!c||!c.trim())throw 0;return c.trim()}));
 return Promise.any(t.concat([new Promise((_,r)=>setTimeout(r,15000))]))}
 function local(q){q=q.toLowerCase();const e=LAST&&LAST.est;
-if(/explain|plan|mera|my/.test(q)&&e)return`Aapke goal ke hisaab se roz lagbhag ${e.kcal} calories aur ${e.protein}g protein ka target hai. Protein ko 3-4 meals mein baant do: dal, paneer, eggs ya curd. Paani khoob piyo aur 7-8 ghante so. Ye estimate hai, doctor ya dietitian se confirm kar lena.`;
-if(/protein/.test(q))return"Protein ke desi sources: dal, chana, rajma, paneer, curd, soya chunks, eggs aur chicken. Har meal mein ek protein source rakho.";
-if(/fat|loss|weight|motapa|patla/.test(q))return"Fat loss ke liye halka calorie deficit rakho, crash diet nahi. Roti ki quantity control karo, sabzi aur dal badhao, sugar aur fried cut karo, aur roz 8-10k steps chalo.";
-if(/muscle|gain|bulk/.test(q))return"Muscle ke liye thoda calorie surplus, roz protein, aur heavy training. Doodh, eggs, paneer, chawal aur dal meals mein rakho. Neend 7-8 ghante zaroori hai.";
-if(/water|paani/.test(q))return"Roz 2.5-3.5 litre paani piyo, garmi ya workout mein thoda zyada.";
-return"Main diet, protein, calories aur desi meals mein help kar sakti hoon. Pehle upar diet form bhar do, phir main aapka plan samjha dungi."}
+if(/explain|plan|my/.test(q)&&e)return`Based on your goal, your target is about ${e.kcal} calories and ${e.protein}g of protein a day. Spread the protein across 3 to 4 meals with foods like dal, paneer, eggs or curd. Drink plenty of water and sleep 7 to 8 hours. This is an estimate, so confirm it with a doctor or dietitian.`;
+if(/protein/.test(q))return"Good desi protein sources are dal, chana, rajma, paneer, curd, soya chunks, eggs and chicken. Try to include one protein source in every meal.";
+if(/fat|loss|weight/.test(q))return"For fat loss, keep a small calorie deficit instead of a crash diet. Control roti portions, add more dal and sabzi, cut sugar and fried food, and walk 8,000 to 10,000 steps a day.";
+if(/muscle|gain|bulk/.test(q))return"For muscle gain, eat slightly above your maintenance calories, get enough protein daily and train hard. Milk, eggs, paneer, rice and dal work well. Sleep 7 to 8 hours.";
+if(/water/.test(q))return"Aim for about 2.5 to 3.5 litres of water a day, and a bit more in hot weather or on workout days.";
+return"I can help with diet, protein, calories and desi meals. Fill in the diet form above first and I will explain your plan."}
 function bub(c,x){const d=document.createElement("div");d.className="b "+c;if(x)d.textContent=x;$("#km").appendChild(d);$("#km").scrollTop=1e9;return d}
 async function send(q){q=q.trim();if(!q)return;bub("u",q);H.push({role:"user",content:q});$("#ki").value="";
 const t=bub("t");t.innerHTML="<i></i><i></i><i></i>";let r;try{r=await ask()}catch(e){r=local(q)}
 t.remove();H.push({role:"assistant",content:r});bub("a",r)}
 function chips(){const c=["Explain my plan","How much protein?","Veg protein sources","Fat loss tips"];$("#kc").innerHTML=c.map(x=>`<button type="button">${x}</button>`).join("")}
-function openK(q){$("#ks").classList.add("on");$("#kb").classList.add("hide");if(!$("#km").children.length){bub("a","Hi, main Kashish AI hoon 👋 Main aapko diet, calories aur protein simple language mein samjha sakti hoon. Kya jaanna hai?");chips()}if(q)send(q);else $("#ki").focus()}
+function openK(q){$("#ks").classList.add("on");$("#kb").classList.add("hide");if(!$("#km").children.length){bub("a","Hi, I’m Kashish AI 👋 I can explain diet, calories and protein in simple words. What would you like to know?");chips()}if(q)send(q);else $("#ki").focus()}
 $("#kb").onclick=()=>openK();$("#kx").onclick=()=>{$("#ks").classList.remove("on");$("#kb").classList.remove("hide")};
 $("#kf").onsubmit=e=>{e.preventDefault();send($("#ki").value)};$("#kc").onclick=e=>{const b=e.target.closest("button");if(b)send(b.textContent)};
 document.querySelectorAll("[data-m]").forEach(a=>a.href="mailto:"+CONTACT+"?subject="+encodeURIComponent(a.dataset.m));
