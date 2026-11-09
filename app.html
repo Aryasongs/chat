@@ -2310,7 +2310,7 @@ function openContactInfo(uid){
   const info=h('div',{class:'ci-group'}, row('About', (c.about&&c.about!=='null'&&c.about!=='undefined')?c.about:'Hey there! I’m using marsX.'));
   if(c.pname&&c.pname!==c.name) info.append(row('Profile name', c.pname));
   if(c.phonePub) info.append(row('Phone number', c.phonePub));
-  if(isBiz(uid)){ if(c.bizcat) info.append(row('Category',c.bizcat)); if(c.bizaddr) info.append(row('Address',c.bizaddr)); if(c.bizhours) info.append(row('Opening hours',c.bizhours)); if(c.bizsite) info.append(h('a',{class:'ci-row lk',href:c.bizsite,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},'Website'),h('span',{},c.bizsite.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))); }
+  if(isBiz(uid)){ if(c.bizsince) info.append(row('Verified since', new Date(c.bizsince).toLocaleDateString([], {month:'long',year:'numeric'}))); if(c.bizcat) info.append(row('Category',c.bizcat)); if(c.bizaddr) info.append(row('Address',c.bizaddr)); if(c.bizhours) info.append(row('Opening hours',c.bizhours)); if(c.bizsite) info.append(h('a',{class:'ci-row lk',href:c.bizsite,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},'Website'),h('span',{},c.bizsite.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))); }
   cleanLinks(c.links).forEach(l=>info.append(h('a',{class:'ci-row lk',href:l.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},h('small',{},l.t),h('span',{},l.u.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'')))));
   if(c.uidNum) info.append(row(isBiz(uid)?'Business number':'UID number', String(c.uidNum)));
   if(/^[A-Z]{2}$/.test(CC[uid]||'') && !c.ccHide) info.append(row('Last active from', [LOC[uid]&&LOC[uid].region, ccName(CC[uid])].filter(Boolean).join(', ')));
@@ -2604,7 +2604,7 @@ const OUTBOX=(()=>{
   };
 })();
 window.addEventListener('online',()=>{ setTimeout(()=>OUTBOX.flush(),600); });
-try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const m=e.data&&e.data.marsx; if(m==='flush-outbox') OUTBOX.flush(); else if(m==='resubscribe') setupPush(); }); }catch(_){}
+try{ navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const m=e.data&&e.data.marsx; if(m==='flush-outbox') OUTBOX.flush(); else if(m==='resubscribe') setupPush(); else if(m==='copy') showOtpCopy(e.data.code); }); }catch(_){}
 
 /* ---- UI ---- */
 function showBanner(){
@@ -2985,16 +2985,23 @@ function bizAdd(bid,it,live){
   else if(live&&PREF.get('nall')&&PREF.get('nsnd')&&!isMuted(bid)) beep('msg');
   renderList();
 }
-function initBiz(){
+function initBiz(){   // load the customer's business settings first, then start listening for business messages
+  const uid=me.uid; if(!uid) return; const md=v=>(v&&['all','allowed','otp'].includes(v.mode))?v.mode:'all';
+  Promise.all([R('bizPrefs/'+uid).once('value'),R('bizAllow/'+uid).once('value')]).then(([a,b])=>{ if(!me||me.uid!==uid) return; bizMode=md(a.val()); bizOtpPush=!(a.val()&&a.val().otpPush===false); bizAllowed=b.val()||{}; initBiz2(); }).catch(()=>{ if(me&&me.uid===uid) initBiz2(); });
+  const f1=R('bizPrefs/'+uid).on('value',s=>{ bizMode=md(s.val()); bizOtpPush=!(s.val()&&s.val().otpPush===false); },()=>{}), f2=R('bizAllow/'+uid).on('value',s=>{ bizAllowed=s.val()||{}; },()=>{});
+  watchers.push(()=>{ try{ R('bizPrefs/'+uid).off('value',f1); R('bizAllow/'+uid).off('value',f2); }catch(_){} });
+}
+function initBiz2(){
   const uid=me.uid; if(!uid) return; const alive=()=>me&&me.uid===uid;
   const bk=R('bizBlocks/'+uid), bkf=bk.on('value',s=>{ if(!alive()) return; bizBlk=s.val()||{}; renderList(); if(openUid&&isBiz(openUid)) renderChat(); },()=>{});
   const q=R('bizInbox/'+uid).limitToLast(200);
   const addf=q.on('child_added',s=>{ const v=s.val(); if(!v||!alive()||!isBiz(v.from)) return; const b=v.from, ts=Number(v.ts)||Date.now();
+    if(!v.me){ const otp=v.kind==='otp'; if(bizMode==='otp'&&!otp) return; if(bizMode==='allowed'&&!otp&&!bizAllowed[b]) return; }   // customer's "Messages from businesses" choice
     if(!contacts[b]||contacts[b].ghost){
       contacts[b]={ uid:b, name:'Business', pname:'Business', photo:null, verified:true, bot:true, about:'Verified business on marsX. You can reply to its messages.', links:[] };
       presence[b]={online:true}; threads[b]={ items:[], last:null, unread:0, chain:Promise.resolve(), votes:{}, reacts:{} };
       const pr=R('bizProfiles/'+b), prf=pr.on('value',s=>{ if(!alive()||!contacts[b]) return; const pv=(s.exists()&&s.val())||{}, l=pv.logo, tx=(x,n)=>(typeof x==='string'&&x.trim())?x.replace(/[\u0000-\u001F]/g,' ').slice(0,n):'';
-        contacts[b].about=tx(pv.about,400)||'Verified business on marsX. You can reply to its messages.'; contacts[b].bizcat=tx(pv.category,60); contacts[b].bizaddr=tx(pv.address,200); contacts[b].bizhours=tx(pv.hours,120); contacts[b].bizsite=(typeof pv.website==='string'&&/^https:\/\/\S{1,200}$/.test(pv.website))?pv.website:'';
+        contacts[b].about=tx(pv.about,400)||'Verified business on marsX. You can reply to its messages.'; contacts[b].bizsince=(Number(pv.since)>0)?Number(pv.since):0; contacts[b].bizcat=tx(pv.category,60); contacts[b].bizaddr=tx(pv.address,200); contacts[b].bizhours=tx(pv.hours,120); contacts[b].bizsite=(typeof pv.website==='string'&&/^https:\/\/\S{1,200}$/.test(pv.website))?pv.website:'';
         contacts[b].photo=(typeof l==='string'&&l.length<82000&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(l))?l:null; renderList(); if(openUid===b) renderChatHeader(); },()=>{});
       watchers.push(()=>{ try{ pr.off('value',prf); }catch(_){} });
     }
@@ -3008,6 +3015,57 @@ function initBiz(){
     const lr=getLR(v.from); t.unread=t.items.filter(i=>i.from!==me.uid&&i.ts>lr).length;
     if(openUid===v.from) renderChat(); renderList(); },()=>{});
   watchers.push(()=>{ try{ bk.off('value',bkf); q.off('child_added',addf); q.off('child_removed',remf); }catch(_){} });
+}
+
+/* ---------------- Business safety: link warning, message requests, "Messages from businesses" ---------------- */
+function hostOf(u){ return u.hostname.replace(/^www\./,'').toLowerCase(); }
+function trustedHosts(){ try{ return JSON.parse(localStorage.getItem('trustlinks')||'[]'); }catch(_){ return []; } }
+function isTrustedHost(hn){   // trusted = our own site, the business's own website (inside its chat), or a site the user chose to trust
+  const ok=d=>hn===d||hn.endsWith('.'+d); if(ok('kashishai.com')||trustedHosts().some(ok)) return true;
+  const c=openUid&&isBiz(openUid)&&contacts[openUid]; if(c&&c.bizsite){ try{ if(ok(hostOf(new URL(c.bizsite)))) return true; }catch(_){} }
+  return false;
+}
+function linkWarn(u){
+  const hn=hostOf(u), odd=/xn--/.test(hn);
+  modal(h('div',{class:'sheet'}, h('h2',{},'Open this link?'),
+    h('p',{style:'margin:10px 0;word-break:break-all'}, h('b',{},hn), h('span',{class:'sub'},'  '+u.href.slice(0,160))),
+    h('p',{class:'sub',style:'margin-bottom:12px'}, (odd?'This address uses special characters and may be pretending to be another site. ':'')+'This link is not from a trusted site. Fake websites can steal passwords and money. Only continue if you trust it.'),
+    h('button',{class:'btn',onclick:()=>{ closeModal(); window.open(u.href,'_blank','noopener,noreferrer'); }},'Open link'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ const l=trustedHosts(); if(!l.includes(hn)) l.push(hn); try{ localStorage.setItem('trustlinks',JSON.stringify(l.slice(-50))); }catch(_){} closeModal(); window.open(u.href,'_blank','noopener,noreferrer'); }},'Always trust '+hn),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Cancel')));
+}
+document.addEventListener('click',e=>{
+  const a=e.target&&e.target.closest?e.target.closest('a[href]'):null; if(!a) return; let u; try{ u=new URL(a.href,location.href); }catch(_){ return; }
+  if(!/^https?:$/.test(u.protocol)||u.origin===location.origin||isTrustedHost(hostOf(u))) return;
+  e.preventDefault(); e.stopPropagation(); linkWarn(u);
+},true);
+const bizModeLabel=()=>({all:'Everyone',allowed:'Only businesses I allowed',otp:'Only login codes'}[bizMode]||'Everyone');
+function openBizPrefs(){
+  const opt=(m,t,d)=>h('button',{class:'item',onclick:()=>{ closeModal(); bizMode=m; R('bizPrefs/'+me.uid).update({mode:m}).then(()=>toast('Saved')).catch(()=>toast('Could not save')); }}, h('span',{}, t+(bizMode===m?' (selected)':''), h('span',{class:'sub'},d)));
+  modal(h('div',{class:'sheet'}, h('h2',{},'Messages from businesses'),
+    opt('all','Everyone','Any approved business can message you. A new business asks you to Allow or Block it.'),
+    opt('allowed','Only businesses I allowed','Messages from other businesses are hidden. Login codes still arrive.'),
+    opt('otp','Only login codes','Business messages are hidden. Only one-time login codes arrive.'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Close')));
+}
+function showOtpCopy(code){   // opened from a notification's "Copy code" action
+  if(!/^\d{4,8}$/.test(String(code))) return;
+  try{ navigator.clipboard.writeText(String(code)).catch(()=>{}); }catch(_){}
+  modal(h('div',{class:'sheet'}, h('h2',{},'Your login code'),
+    h('div',{style:'font-size:34px;font-weight:700;letter-spacing:6px;text-align:center;margin:14px 0'},String(code)),
+    h('button',{class:'btn',onclick:()=>{ copyText(String(code)); closeModal(); }},'Copy code'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:closeModal},'Close')));
+}
+(function(){ try{ const m=location.search.match(/[?&]copy=(\d{4,8})(?:&|$)/); if(m){ history.replaceState(null,'',location.pathname+location.hash); setTimeout(()=>showOtpCopy(m[1]),900); } }catch(_){} })();
+function bizAsk(uid){   // first real message from a new business: let the customer decide
+  const c=contacts[uid], t=threads[uid]; if(!c||!t||openUid!==uid||bizAllowed[uid]||isBlocked(uid)) return;
+  try{ if(localStorage.getItem('bizask:'+uid)==='1') return; }catch(_){}
+  if(!t.items.some(i=>i.from!==me.uid&&!i.bzcode)) return;
+  modal(h('div',{class:'sheet'}, h('h2',{},'New business: '+(c.name||'Business')),
+    h('p',{class:'sub',style:'margin:8px 0 14px'},'This business sent you a message. Allow it to keep getting its messages, or block it. You can change this any time.'),
+    h('button',{class:'btn',onclick:()=>{ closeModal(); R('bizAllow/'+me.uid+'/'+uid).set(true).then(()=>toast('Business allowed')).catch(()=>toast('Could not save')); }},'Allow'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ closeModal(); blockUser(uid); }},'Block'),
+    h('button',{class:'btn ghost',style:'margin-top:10px',onclick:()=>{ try{ localStorage.setItem('bizask:'+uid,'1'); }catch(_){} closeModal(); }},'Not now')));
 }
 
 /* ---------------- list rendering ---------------- */
@@ -3175,6 +3233,9 @@ function openPrivacyPage(){
     h('div',{class:'sec'}, h('h3',{},'Country flag'),
       h('div',{class:'item'}, h('span',{style:'flex:1'},'Show my location',h('span',{class:'sub'},'Shows your state, country and local time to contacts while you’re offline.')),
         swEl(!(myProf&&myProf.ccHide), v=>{ R('users/'+me.uid+'/ccHide').set(v?null:true).catch(()=>toast('Could not save')); }))),
+    h('div',{class:'sec'}, h('h3',{},'Businesses'),
+      h('button',{class:'item',onclick:openBizPrefs}, svg('shield'), h('span',{}, 'Messages from businesses', h('span',{class:'sub'}, bizModeLabel()))),
+      h('div',{class:'item'}, h('span',{style:'flex:1'},'Show login codes in notifications',h('span',{class:'sub'},'The code appears on your lock screen. Turn off if other people can see your phone.')), swEl(bizOtpPush, v=>{ bizOtpPush=v; R('bizPrefs/'+me.uid).update({otpPush:v}).catch(()=>toast('Could not save')); }))),
     h('div',{class:'sec'}, h('h3',{},'Safety'),
       h('button',{class:'item',onclick:openBlockedList}, svg('ban'), h('span',{}, 'Blocked contacts', h('span',{class:'sub'}, Object.keys(blockedAt).length+' blocked'))),
       isAdmin ? h('button',{class:'item',onclick:openModPanel}, svg('shield'), h('span',{}, 'Moderation', h('span',{class:'sub'}, openReportCount+' open report'+(openReportCount===1?'':'s')))) : null)));
@@ -3904,6 +3965,7 @@ function openChat(uid){
   }
   openUid=uid; document.body.classList.add('chat-open');
   const t=threads[uid]; if(t){ t.unread=0; setLR(uid, Date.now()); }
+  if(isBiz(uid)) setTimeout(()=>bizAsk(uid),400);
   renderChat(); renderList();
 }
 /* Snapchat-style line under the name: "State, Country" -> fades to "Local time 3:42 PM" -> back, repeating. */
@@ -4627,7 +4689,7 @@ function appendMsg(it){
   } else if(p.t==='loc'){
     el.classList.add('img'); bub.append(locView(p));
   }
-  if(it.bzbtns && it.bzbtns.length && !it.unsent && !mine){ const bx=h('div',{class:'bzbs'}); it.bzbtns.forEach(bt=>{ if(bt.t==='url') bx.append(h('a',{class:'bzb',href:bt.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},bt.x)); else bx.append(h('button',{class:'bzb',onclick:e=>{ e.stopPropagation(); bizReply(it.from,{t:'text',text:bt.x,btn:true}).catch(()=>{}); }},bt.x)); }); bub.append(bx); }
+  if(it.bzbtns && it.bzbtns.length && !it.unsent && !mine){ const bx=h('div',{class:'bzbs'}); it.bzbtns.forEach(bt=>{ if(bt.t==='url') bx.append(h('a',{class:'bzb',href:bt.u,target:'_blank',rel:'noopener noreferrer nofollow ugc'},bt.x)); else bx.append(h('button',{class:'bzb',onclick:e=>{ e.stopPropagation(); const bb=e.currentTarget; if(bb.disabled) return; bb.disabled=true; bb.style.opacity='.55'; bizReply(it.from,{t:'text',text:bt.x,btn:true}).catch(()=>{ bb.disabled=false; bb.style.opacity=''; }); }},bt.x)); }); bub.append(bx); }
   if(it.bzauto && !it.unsent && !mine){ bub.append(h('div',{class:'autotag'},'Automated message')); }
   if(it.bzcode && !it.unsent && !mine){ bub.append(h('div',{class:'otpc'},h('button',{class:'otpcopy',onclick:e=>{ e.stopPropagation(); copyText(it.bzcode); }},svg('copy'),'Copy code'))); }
   if(p && p.rq && typeof p.rq==='object' && !it.unsent){
@@ -4786,7 +4848,7 @@ async function approveQr(sid){
    Block / Report / Moderation
    ===================================================================== */
 const REASONS = ['Spam','Harassment or bullying','Hate speech','Threats or violence','Sexual content','Scam or fraud','Impersonation','Other'];
-let bizBlk = {};
+let bizBlk = {}, bizMode = 'all', bizAllowed = {}, bizOtpPush = true;
 const isBlocked = uid => !!blockedAt[uid]||!!bizBlk[uid];
 const blockBar = uid => h('div',{class:'blockbar'}, h('span',{},'You blocked this contact.'), h('button',{class:'link',onclick:()=>unblockUser(uid)},'Unblock'));
 const nameCache = {};
@@ -4832,6 +4894,7 @@ function openChatActions(uid){
   const c=contacts[uid]; if(!c) return; const b=isBlocked(uid);
   if(isKai(uid)) return modal(h('div',{class:'sheet'}, h('h2',{},nameBadge(c)),
     h('button',{class:'item',onclick:()=>{ closeModal(); openContactInfo(uid); }}, svg('user'), 'View profile'),
+    isBiz(uid)?h('button',{class:'item',onclick:()=>{ closeModal(); openReport(uid); }}, svg('shield'), 'Report business'):null,
     isBiz(uid)?h('button',{class:'item',onclick:()=>{ closeModal(); isBlocked(uid)?unblockUser(uid):confirmBlock(uid); }}, svg('ban'), isBlocked(uid)?'Unblock business':'Block business'):h('button',{class:'item',onclick:()=>{ closeModal(); window.open(isMonte(uid)?MONTE_SITE:KAI_SITE,'_blank','noopener'); }}, svg('globe'), isMonte(uid)?'Open MONTÈ':'Open kashishai.com'),
     h('button',{class:'item',onclick:()=>{ closeModal(); togglePin(uid); }}, svgc('pin','#FF9500'), isPinned(uid)?'Unpin chat':'Pin chat'),
     h('button',{class:'item',onclick:()=>{ closeModal(); toggleArchive(uid); }}, svgc('archive','#0A84FF'), isArchived(uid)?'Unarchive chat':'Archive chat'),
@@ -5675,6 +5738,68 @@ async function bootFromCache(){
   }catch(e){ console.warn('boot cache',e); }
 }
 bootP=bootFromCache();
+
+/* ---------------- Android/iOS back button & swipe-back (installed PWA) ----------------
+   Back dabane / side-swipe karne par app band hone ke bajay pichhli screen par jaata hai:
+   popup/sheet -> settings sub-page -> chat -> Chats tab -> (2 baar back = exit) */
+(function(){
+  let armed=false, exitUntil=0;
+  const z=el=>parseInt(getComputedStyle(el).zIndex,10)||0;
+  function layers(){
+    const L=[], add=(sel,fn)=>document.querySelectorAll(sel).forEach(el=>L.push({el,close:()=>fn(el)}));
+    add('#viewer',e=>e.remove());
+    add('.stvw',e=>{ const b=e.querySelector('.stvx'); b?b.click():e.remove(); });
+    add('.sted',e=>{ const b=e.querySelector('.sttop button'); b?b.click():(e.remove(),document.body.classList.remove('stopen')); });
+    add('.mo:not(.out)',()=>closeMsgMenu());
+    add('.stask',e=>e.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+    add('.modal',()=>closeModal());
+    add('.spage',e=>e.remove());
+    add('#scan',e=>{ const b=e.querySelector('button'); b&&b.click(); });
+    add('#callScr',e=>{ if(e.style.display!=='none'){ try{ minimizeCall(); }catch(_){} } });
+    L.sort((a,b)=>(z(b.el)-z(a.el)) || (a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?1:-1));
+    return L;
+  }
+  const blocked=()=>document.querySelector('.dgate,#modOverlay,#voview');   // verify/lock screens: back se band na ho
+  function goBack(){
+    if(blocked()) return true;
+    const top=layers()[0]; if(top){ top.close(); return true; }
+    if(document.body.classList.contains('chat-open')){
+      const card=document.getElementById('chatCard');
+      if(card){
+        if(card.querySelector('.ci')){ try{ ciClose(); }catch(_){} return true; }
+        const ex=card.querySelector('.emoji,.gifp,.menu');
+        if(ex){ ex.remove(); const p=card.querySelector('.plus.open'); p&&p.classList.remove('open'); return true; }
+      }
+      closeChat(); return true;
+    }
+    const sb=document.getElementById('sbar');
+    if(sb&&sb.classList.contains('on')){ document.getElementById('searchBtn').click(); return true; }
+    if(typeof showArch!=='undefined'&&showArch){ showArch=false; renderList(); return true; }
+    if(typeof tab!=='undefined'&&tab!=='chats'){ setTab('chats'); return true; }
+    return false;                                                                  // sabse pehli screen
+  }
+  function arm(){
+    if(armed) return;
+    try{
+      if(!(history.state&&history.state.mx==='top')){
+        history.replaceState({mx:'base'},'');
+        history.pushState({mx:'top'},'');
+      }
+      armed=true;
+    }catch(_){}
+  }
+  ['pointerdown','touchstart','click','keydown'].forEach(ev=>addEventListener(ev,arm,{capture:true,passive:true}));
+  addEventListener('popstate',()=>{
+    if(!armed) return;
+    const appUp=!document.getElementById('appStage').classList.contains('hidden');
+    if(goBack()){ try{ history.pushState({mx:'top'},''); }catch(_){} return; }
+    if(appUp && Date.now()>exitUntil){                                              // pehli baar: sirf toast
+      exitUntil=Date.now()+2500; toast('Press back again to exit');
+      try{ history.pushState({mx:'top'},''); }catch(_){} return;
+    }
+    armed=false; history.back();                                                    // doosri baar: app se bahar
+  });
+})();
 
 </script>
 </body>
