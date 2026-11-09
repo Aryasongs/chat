@@ -1647,7 +1647,12 @@ function resizeImage(fileOrBlob, max, q, square){
     img.onerror=()=>{ URL.revokeObjectURL(url); no(new Error('Bad image')); }; img.src=url;
   });
 }
+const SPECIAL_UIDS={'kashishtyagi0999@gmail.com':'02092497'};   // reserved UID numbers: given to this email on its first sign-up
 async function allocateUidNum(){
+  try{
+    const sp=SPECIAL_UIDS[String((me&&me.email)||'').trim().toLowerCase()];
+    if(sp){ const c=await R('uidIndex/'+sp).transaction(v => v===null ? me.uid : undefined); if(c.committed || (c.snapshot&&c.snapshot.val()===me.uid)) return sp; }
+  }catch(e){ console.warn('special uid',e); }
   for(let i=0;i<8;i++){
     const r = await R('counters/uid').transaction(v => (v||10000000)+1);
     if(!r.committed) continue;
