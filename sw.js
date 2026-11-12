@@ -8,7 +8,7 @@ const APP_URL = '/app';   // the chat app lives at /app (landing page is at /)
 self.addEventListener('push', e => {
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (wins.some(w => w.visibilityState === 'visible')) return;   // app is open and visible: no need
+    if (wins.some(w => w.visibilityState === 'visible' || w.focused)) return;   // app is open and on screen: user sees it live, no notification
     let d = null;
     try { d = e.data ? e.data.json() : null; } catch (_) {}
     const isCall = !!(d && (d.kind === 'call' || d.kind === 'videocall'));
